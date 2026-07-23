@@ -22,6 +22,7 @@ from typing import Optional
 
 from . import config, tags
 from .models import CandidatePair, Mode, UserEventProfile, now
+from .preference import preference
 from .store import store
 
 # 社交目标兼容表（对称）
@@ -154,13 +155,15 @@ def collect_candidates(observer_id: str) -> tuple[list[Candidate], dict[str, str
             continue
 
         dwell = store.dwell_seconds(observer_id, eph)
+        # 学到的偏好：observer 视角的排序加分（不改兼容分/阈值，保持准入对称）
+        pref = preference.preference_bonus(observer_id, other.interest_tags)
         out.append(Candidate(
             user_id=other_id,
             compat_score=cs,
-            rank_score=cs + dwell_bonus(dwell),
+            rank_score=cs + dwell_bonus(dwell) + pref,
             dwell_seconds=dwell,
             proximity_band=proximity_band([s.rssi for s in seen]),
-            breakdown=bd,
+            breakdown={**bd, "pref_bonus": pref},
         ))
 
     # 降序排序；分数相同时按 user_id 排，保证结果可复现

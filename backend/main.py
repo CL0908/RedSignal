@@ -374,6 +374,62 @@ async def ws_watch(ws: WebSocket, user_id: str) -> None:
         log.info("watch ws disconnected: %s", user_id)
 
 
+# ---------------- Agent + 偏好学习 API ----------------
+from .preference import preference, compute_engagement  # noqa: E402
+
+
+class LabelExtractRequest(BaseModel):
+    intro: str
+
+
+@app.post("/api/profile/{user_id}/labels")
+def extract_profile_labels(user_id: str, req: LabelExtractRequest):
+    """自我介绍 → 规范化兴趣标签；若该用户有档案则写回 interest_tags。"""
+    labels = agent.extract_labels(req.intro)
+    prof = store.get_profile(user_id)
+    if prof is not None:
+        prof.interest_tags = labels
+    return {"user_id": user_id, "labels": labels}
+
+
+class ChatAnalyzeRequest(BaseModel):
+    partner_id: str
+    # messages: [{"sender": str, "ts": epoch_seconds, "text": str}]
+    messages: list[dict]
+    partner_tags: list[str] | None = None
+
+
+@app.post("/api/chat/{user_id}/analyze")
+def analyze_chat(user_id: str, req: ChatAnalyzeRequest):
+    """一次聊天结束 → 评融洽度 + 算 engagement + 更新 user_id 对这类人的偏好。"""
+    rapport = agent.analyze_rapport(req.messages)
+    metrics = compute_engagement(req.messages, rapport=rapport["rapport"])
+    # 对方标签：优先用传入的，否则查档案
+    ptags = req.partner_tags
+    if ptags is None:
+        p = store.get_profile(req.partner_id)
+        ptags = p.interest_tags if p else []
+    preference.update_from_chat(user_id, ptags, metrics.engagement)
+    return {
+        "user_id": user_id,
+        "partner_id": req.partner_id,
+        "rapport": rapport,
+        "metrics": metrics.to_dict(),
+        "updated_preference_top": preference.top_tags(user_id),
+    }
+
+
+@app.get("/api/preference/{user_id}")
+def get_preference(user_id: str):
+    """用户学到的偏好 + 一句自然语言解释（你可能也喜欢…）。"""
+    top = preference.top_tags(user_id)
+    return {
+        "user_id": user_id,
+        "top_tags": top,
+        "explanation": agent.explain_preference(top),
+    }
+
+
 # ---------------- 静态客户端 ----------------
 @app.get("/")
 def index():
