@@ -48,6 +48,18 @@
   .flow .step.done{border-color:var(--green);color:var(--green)}
   .foot{font-size:11px;color:var(--dim);text-align:center;line-height:1.6}
   code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:11px}
+  /* 接近提醒全屏遮罩 */
+  #alert{position:fixed;inset:0;z-index:99;display:none;pointer-events:none;
+    align-items:center;justify-content:center;flex-direction:column;gap:14px;
+    background:radial-gradient(circle at 50% 45%, transparent 30%, rgba(255,77,107,0) 70%);}
+  #alert.show{display:flex;pointer-events:auto}
+  #alertHeart{font-size:96px;filter:drop-shadow(0 0 24px var(--red))}
+  #alertText{font-size:20px;font-weight:800;text-align:center;text-shadow:0 2px 12px #000}
+  #alertBand{font-size:15px;color:var(--red);font-weight:700}
+  #alertBtn{pointer-events:auto;background:var(--red);color:#fff;border:none;
+    border-radius:14px;padding:14px 28px;font-size:16px;font-weight:800;cursor:pointer;
+    box-shadow:0 6px 24px rgba(255,77,107,.5)}
+  #alertClose{pointer-events:auto;background:transparent;border:1px solid var(--line);color:var(--dim)}
 </style>
 </head>
 <body>
@@ -108,11 +120,37 @@
     <div class="muted" id="chatMetrics" style="margin-top:8px"></div>
   </div>
 
+  <!-- 接近提醒卡 -->
+  <div class="card">
+    <h2><span class="dot on"></span>接近提醒（越靠近 → 闪+震+响 越急）</h2>
+    <div class="muted" style="margin-bottom:10px">
+      附近有适配的人靠近时，手机屏幕闪烁、震动、提示音随距离加剧；双击戒指即确认认识。
+    </div>
+    <div class="bar" style="margin-bottom:10px">
+      <button class="primary" id="btnApproach">🎬 模拟：附近有适配的人正在靠近</button>
+      <button id="btnStopAlert">⏹ 停止</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="muted">手动距离</span>
+      <input type="range" id="proxSlider" min="0" max="100" value="0" style="flex:1">
+      <span class="v" id="proxLabel" style="width:64px;text-align:right">远</span>
+    </div>
+  </div>
+
   <div class="foot">
     数据来源：戒指 BLE (Web Bluetooth → <code>/ws/device</code> → zilo_protocol) ＋ 手表 (Gadgetbridge → <code>/ws/watch</code>)
     → <code>wearable_hub</code> 统一融合 → <code>/api/devices/{'{'}user{'}'}</code> 轮询展示。<br>
     偏好由 <code>/api/chat/analyze</code>（Claude 评融洽度）+ <code>preference.py</code>（确定性学习）更新。
   </div>
+</div>
+
+<!-- 接近提醒全屏遮罩 -->
+<div id="alert">
+  <div id="alertHeart">❤️</div>
+  <div id="alertText">附近有一位与你适配的人</div>
+  <div id="alertBand">正在靠近…</div>
+  <button id="alertBtn">双击戒指 / 点此确认认识</button>
+  <button id="alertClose">忽略</button>
 </div>
 
 <script>
@@ -236,6 +274,82 @@ $('btnRing').onclick = async () => {
     $('btnRing').textContent = '✅ 戒指已连接';
   }catch(e){ alert('连接失败：'+e.message); }
 };
+
+// ==================== 接近提醒：越近 → 闪+震+响 越急 ====================
+let proxLevel = 0;      // 0=远, 1=就在旁边
+let alertTimer = null;  // 脉冲循环
+let approachAnim = null;// 模拟靠近动画
+let audioCtx = null;
+
+function band(l){ return l>=0.9?'就在你旁边！':l>=0.6?'很近':l>=0.3?'接近中':'附近'; }
+
+function beep(l){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type='sine'; o.frequency.value=440+l*520;          // 越近音越高
+    g.gain.value=0.0001; o.connect(g); g.connect(audioCtx.destination);
+    const t=audioCtx.currentTime;
+    g.gain.exponentialRampToValueAtTime(0.25*(0.4+l), t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.12);
+    o.start(t); o.stop(t+0.13);
+  }catch(e){}
+}
+
+function pulseOnce(){
+  const l = proxLevel;
+  const heart = $('alertHeart');
+  heart.style.transform = `scale(${1+0.35*l})`;
+  $('alert').style.background =
+    `radial-gradient(circle at 50% 45%, rgba(255,77,107,${0.10+0.5*l}) 0%, transparent 62%)`;
+  setTimeout(()=>{ heart.style.transform='scale(1)'; }, 90+120*(1-l));
+  if(navigator.vibrate) navigator.vibrate(Math.round(30+120*l));   // 越近震越久
+  beep(l);
+  $('alertBand').textContent = band(l);
+}
+
+function alertLoop(){
+  clearTimeout(alertTimer);
+  if(!$('alert').classList.contains('show')) return;
+  pulseOnce();
+  const interval = 1200 - 1080*proxLevel;   // 远1.2s → 近0.12s，越近越急
+  alertTimer = setTimeout(alertLoop, Math.max(120, interval));
+}
+
+function startAlert(){
+  $('alert').classList.add('show');
+  if(!alertTimer) alertLoop();
+}
+function stopAlert(){
+  $('alert').classList.remove('show');
+  clearTimeout(alertTimer); alertTimer=null;
+  clearInterval(approachAnim); approachAnim=null;
+  if(navigator.vibrate) navigator.vibrate(0);
+  $('proxSlider').value=0; proxLevel=0; $('proxLabel').textContent='远';
+}
+function setLevel(l){
+  proxLevel = Math.max(0, Math.min(1, l));
+  $('proxSlider').value = Math.round(proxLevel*100);
+  $('proxLabel').textContent = band(proxLevel);
+  if(proxLevel>0.02) startAlert();
+}
+
+// 供后端真实近接驱动：把 RSSI(-100..-40) 或 proximity_band 映射成 level
+window.triggerProximity = (level) => setLevel(level);
+
+$('btnApproach').onclick = () => {
+  stopAlert();
+  let l=0.05; startAlert();
+  approachAnim = setInterval(()=>{ l+=0.03; setLevel(l);
+    if(l>=1){ clearInterval(approachAnim); approachAnim=null; } }, 180);   // ~6s 走完远→近
+};
+$('btnStopAlert').onclick = stopAlert;
+$('alertClose').onclick = stopAlert;
+$('alertBtn').onclick = () => {   // 模拟双击确认 → 建立连接
+  stopAlert();
+  alert('已确认认识 ❤️ —— 真实场景由「双击戒指」触发确认，交换预授权资料。');
+};
+$('proxSlider').oninput = e => setLevel(e.target.value/100);
 
 $('btnStop').onclick = () => { if(timer){clearInterval(timer);timer=null;$('btnStop').textContent='▶ 恢复刷新';}
   else{ timer=setInterval(refresh,1000); $('btnStop').textContent='⏸ 停止刷新'; } };
