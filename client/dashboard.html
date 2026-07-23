@@ -61,6 +61,8 @@
     <button class="primary" id="btnRing">🔗 连接戒指 (Web Bluetooth)</button>
     <button id="btnMock">🎬 演示模拟（无硬件也能看全数据）</button>
     <button id="btnChat">💬 模拟一次聊天 → 学习偏好</button>
+    <button id="btnUpload">⌚ 上传手表数据 (Gadgetbridge 导出)</button>
+    <input type="file" id="gbFile" accept=".sqlite,.db,application/octet-stream,*/*" style="display:none">
     <button id="btnStop">⏸ 停止刷新</button>
   </div>
 
@@ -188,6 +190,22 @@ $('btnChat').onclick = async () => {
     `本次聊天：${m.message_count} 条 · 回复速度分 ${m.reply_speed_score} · 活跃 ${m.active_days} 天 · `+
     `融洽度 ${rp.rapport}（${rp.reason}）· 综合 engagement ${m.engagement}`;
   refreshPref();
+};
+
+// ---- 上传手表数据：GB 导出的 SQLite → 后端解析 → 仪表盘出真实数据 ----
+$('btnUpload').onclick = () => $('gbFile').click();
+$('gbFile').onchange = async e => {
+  const f = e.target.files[0]; if(!f) return;
+  $('btnUpload').textContent = '⏳ 上传中…';
+  try{
+    const fd = new FormData(); fd.append('file', f, f.name);
+    const r = await fetch(`/api/devices/${UID}/gadgetbridge-upload`, {method:'POST', body:fd});
+    const d = await r.json();
+    const w = d.watch || {};
+    $('btnUpload').textContent = `✅ 已读入 心率${w.heart_rate_bpm||'-'} 步${w.today_steps||0}`;
+    refresh();
+  }catch(err){ $('btnUpload').textContent = '❌ 上传失败'; alert(err.message); }
+  setTimeout(()=>{ $('btnUpload').textContent='⌚ 上传手表数据 (Gadgetbridge 导出)'; }, 4000);
 };
 
 // ---- 真实戒指：Web Bluetooth 连接并转发帧到后端 ----

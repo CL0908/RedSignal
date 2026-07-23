@@ -13,7 +13,7 @@ import logging
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -439,6 +439,25 @@ def get_preference(user_id: str):
         "top_tags": top,
         "explanation": agent.explain_preference(top),
     }
+
+
+@app.post("/api/devices/{user_id}/gadgetbridge-upload")
+async def gadgetbridge_upload(user_id: str, file: UploadFile = File(...)):
+    """网页版手表接入：手机上从 Gadgetbridge 导出 SQLite，在网页里直接上传本文件。
+
+    后端把上传的库落到临时文件 → gadgetbridge.read_db 解析 → 更新 wearable_hub。
+    全程只用网页，无需 adb/电脑/Termux。
+    """
+    import tempfile
+    from pathlib import Path
+    data = await file.read()
+    tmp = Path(tempfile.gettempdir()) / f"gb_upload_{user_id}.sqlite"
+    tmp.write_bytes(data)
+    health = gadgetbridge.read_db(tmp)
+    health.user_id = user_id
+    wearable_hub.watch_sync(user_id, health)
+    snap = wearable_hub.get(user_id).to_dict()
+    return {"ok": True, "bytes": len(data), "watch": snap["watch"]}
 
 
 @app.post("/api/demo/{user_id}/mock")
