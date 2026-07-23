@@ -75,6 +75,7 @@ class WatchHealthSnapshot:
     sleep_hours: float = 0.0
     sleep_stages: list[SleepSample] = field(default_factory=list)
     heart_rate_history: list[HeartRateSample] = field(default_factory=list)
+    battery_percent: int = -1
     updated_at: Optional[datetime] = None
 
 
@@ -136,6 +137,9 @@ def read_db(db_path: str | Path, device_address: Optional[str] = None) -> WatchH
         # 读压力
         snapshot.last_stress = _read_stress(conn, tables, device_address)
 
+        # 读电量
+        snapshot.battery_percent = _read_battery(conn, tables)
+
         return snapshot
     finally:
         conn.close()
@@ -150,15 +154,29 @@ def _get_device_name(conn: sqlite3.Connection, address: Optional[str]) -> Option
     try:
         if address:
             cur = conn.execute(
-                "SELECT NAME FROM DEVICE WHERE IDENTIFIER = ? LIMIT 1",
-                (address,))
-        else:
-            cur = conn.execute(
-                "SELECT NAME FROM DEVICE WHERE TYPE != 0 LIMIT 1")
+                "SELECT NAME FROM DEVICE WHERE IDENTIFIER = ? LIMIT 1", (address,))
+            row = cur.fetchone()
+            if row:
+                return row[0]
+        # 不再按 TYPE 过滤（小米手环 TYPE=0）：取第一条有名字的设备
+        cur = conn.execute("SELECT NAME FROM DEVICE WHERE NAME IS NOT NULL LIMIT 1")
         row = cur.fetchone()
         return row[0] if row else None
     except sqlite3.OperationalError:
         return None
+
+
+def _read_battery(conn: sqlite3.Connection, tables: set[str]) -> int:
+    """读最新电量（BATTERY_LEVEL.LEVEL）。无则 -1。"""
+    if "BATTERY_LEVEL" not in tables:
+        return -1
+    try:
+        cur = conn.execute(
+            "SELECT LEVEL FROM BATTERY_LEVEL ORDER BY TIMESTAMP DESC LIMIT 1")
+        row = cur.fetchone()
+        return int(row[0]) if row and row[0] is not None else -1
+    except sqlite3.OperationalError:
+        return -1
 
 
 def _read_heart_rate(
@@ -208,6 +226,7 @@ def _read_today_steps(
 
     table_candidates = [
         "XIAOMI_ACTIVITY_SAMPLE",
+        "HUAMI_EXTENDED_ACTIVITY_SAMPLE",   # 小米手环 7 等 Huami 系列步数在此
         "MI_BAND_ACTIVITY_SAMPLE",
     ]
 

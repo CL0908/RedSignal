@@ -160,6 +160,8 @@ class WearableHub:
             snap.watch.spo2_percent = health.last_spo2.spo2_percent
         if health.last_stress:
             snap.watch.stress_level = health.last_stress.stress_level
+        if getattr(health, "battery_percent", -1) >= 0:
+            snap.watch.battery_percent = health.battery_percent
         snap.updated_at = datetime.now(timezone.utc)
 
     def watch_realtime_hr(self, user_id: str, bpm: int) -> None:

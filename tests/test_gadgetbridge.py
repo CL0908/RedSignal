@@ -41,6 +41,33 @@ def test_read_xiaomi_watch_db(tmp_path):
     assert len(snap.sleep_stages) == 5
 
 
+def test_read_xiaomi_mi_band_7_huami_extended(tmp_path):
+    """小米手环7：步数在 HUAMI_EXTENDED、电量在 BATTERY_LEVEL、设备 TYPE=0、HR=255 无效。"""
+    db = tmp_path / "Gadgetbridge"
+    c = sqlite3.connect(str(db))
+    c.executescript("""
+        CREATE TABLE DEVICE(NAME TEXT, IDENTIFIER TEXT, TYPE INT);
+        INSERT INTO DEVICE VALUES('Xiaomi Smart Band 7','E4:FF:21:00:0D:68',0);
+        CREATE TABLE HUAMI_EXTENDED_ACTIVITY_SAMPLE(
+            TIMESTAMP INT, DEVICE_ID INT, USER_ID INT, RAW_INTENSITY INT,
+            STEPS INT, RAW_KIND INT, HEART_RATE INT, UNKNOWN1 INT,
+            SLEEP INT, DEEP_SLEEP INT, REM_SLEEP INT);
+        CREATE TABLE BATTERY_LEVEL(TIMESTAMP INT, DEVICE_ID INT, LEVEL INT, BATTERY_INDEX INT);
+    """)
+    now = int(time.time()); t0 = now - now % 86400
+    for i in range(10):
+        c.execute("INSERT INTO HUAMI_EXTENDED_ACTIVITY_SAMPLE VALUES(?,1,1,30,?,118,255,5,0,128,0)",
+                  (t0 + i * 60, i))  # STEPS=i, HR=255(无效)
+    c.execute("INSERT INTO BATTERY_LEVEL VALUES(?,1,31,0)", (now - 10,))
+    c.commit(); c.close()
+
+    snap = gadgetbridge.read_db(db)
+    assert snap.device_name == "Xiaomi Smart Band 7"   # TYPE=0 也能取到名字
+    assert snap.battery_percent == 31                   # 读到电量
+    assert snap.today_steps == sum(range(10))           # 步数从 HUAMI_EXTENDED 汇总
+    assert snap.last_heart_rate is None                 # HR 全 255 被正确过滤
+
+
 def test_read_missing_db_returns_empty(tmp_path):
     snap = gadgetbridge.read_db(tmp_path / "nope.sqlite")
     assert snap.today_steps == 0
