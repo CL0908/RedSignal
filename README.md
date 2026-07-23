@@ -168,12 +168,7 @@ tests/               50+ 测试(协议/匹配/偏好/手表读取,全绿)
 ---
 
 ## 六、快速开始
-```bash
-pip install -r requirements.txt
-uvicorn backend.main:app --reload --port 8000
-# 融合仪表盘演示（无硬件也能跑）：
-open http://localhost:8000/dashboard
-```
+
 - 无 `ANTHROPIC_API_KEY` → 所有 Agent 走确定性 fallback（断网可演示）；`export ANTHROPIC_API_KEY=sk-ant-...` 即接真 Claude。
 - 破冰官上真机：见 [`photon-agent/README.md`](photon-agent/README.md)（Photon Promo Code → 凭证 → `npm start`）。
 - 真戒指：戒指贴 Mac、`.venv/bin/python -u tools/ring_session.py 60`；或仪表盘「连接戒指」(Chrome/HTTPS)。
