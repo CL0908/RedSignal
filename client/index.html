@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RedSignal 心动信号</title>
+<style>
+  :root{
+    --bg:#0e0c16; --surface:#171425; --line:#2a2440;
+    --text:#f0edf7; --dim:#8b85a3;
+    --red:#ff4d6b; --green:#34e08c; --blue:#4d8dff;
+    --accent:var(--dim);
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,"PingFang SC","Noto Sans SC",system-ui,sans-serif;
+    display:flex; justify-content:center;
+  }
+  .phone{width:100%; max-width:420px; min-height:100vh; padding:20px 18px 32px;
+         display:flex; flex-direction:column; gap:18px}
+
+  /* ---- 头部 ---- */
+  header{display:flex; justify-content:space-between; align-items:baseline}
+  .wordmark{font-size:15px; font-weight:700; letter-spacing:.35em; text-transform:uppercase}
+  .wordmark b{color:var(--accent); transition:color .3s}
+  .who{font-size:13px; color:var(--dim)}
+
+  /* ---- 遥测条 ---- */
+  .telemetry{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:11px; letter-spacing:.05em; color:var(--dim);
+    border:1px solid var(--line); border-radius:8px; padding:8px 12px;
+    display:flex; justify-content:space-between; gap:8px;
+  }
+  .telemetry .st{color:var(--accent); transition:color .3s}
+
+  /* ---- 戒指 ---- */
+  .ring-stage{display:flex; justify-content:center; padding:6px 0}
+  .ring-wrap{position:relative; width:210px; height:210px; cursor:pointer;
+             -webkit-tap-highlight-color:transparent; user-select:none}
+  .ring-wrap svg{width:100%; height:100%; display:block}
+  .ring-core{fill:none; stroke:var(--accent); stroke-width:10;
+             filter:drop-shadow(0 0 14px var(--accent));
+             transition:stroke .35s, filter .35s}
+  .arc{fill:none; stroke-width:4; stroke-linecap:round; opacity:0;
+       transition:opacity .4s, stroke-dashoffset .8s ease}
+  .arc.lit{opacity:1; stroke-dashoffset:0 !important}
+  #arcSelf{stroke:var(--text)}
+  #arcPeer{stroke:var(--accent)}
+  .ring-label{position:absolute; inset:0; display:flex; flex-direction:column;
+              align-items:center; justify-content:center; gap:4px; text-align:center;
+              pointer-events:none}
+  .ring-label .big{font-size:15px; font-weight:600}
+  .ring-label .sub{font-size:11px; color:var(--dim); max-width:130px; line-height:1.5}
+  .pulse{animation:pulse .5s ease}
+  @keyframes pulse{0%{transform:scale(1)}40%{transform:scale(.94)}100%{transform:scale(1)}}
+  @media (prefers-reduced-motion: reduce){
+    .pulse{animation:none}
+    .arc{transition:opacity .2s}
+  }
+
+  /* ---- 模式选择 ---- */
+  .modes{display:flex; gap:10px; justify-content:center}
+  .mode{flex:1; max-width:110px; padding:11px 0; border-radius:10px;
+        border:1px solid var(--line); background:var(--surface);
+        color:var(--dim); font-size:13px; cursor:pointer; text-align:center;
+        transition:border-color .2s, color .2s}
+  .mode span{display:block; font-size:10px; margin-top:3px; letter-spacing:.05em}
+  .mode.on{color:var(--text)}
+  .mode.on.r{border-color:var(--red)}
+  .mode.on.g{border-color:var(--green)}
+  .mode.on.b{border-color:var(--blue)}
+
+  /* ---- 卡片与动作 ---- */
+  .card{background:var(--surface); border:1px solid var(--line);
+        border-radius:12px; padding:16px; display:none}
+  .card.show{display:block}
+  .card h3{font-size:13px; font-weight:600; margin-bottom:8px; letter-spacing:.02em}
+  .card p{font-size:13px; color:var(--dim); line-height:1.7}
+  .card .em{color:var(--text)}
+  .notice-score{font-family:ui-monospace,monospace; font-size:11px; color:var(--dim);
+                margin-top:8px}
+  .fieldline{display:flex; justify-content:space-between; font-size:13px;
+             padding:6px 0; border-bottom:1px dashed var(--line)}
+  .fieldline:last-child{border-bottom:none}
+  .fieldline .k{color:var(--dim)}
+  .ice{margin-top:12px; padding:12px; border-radius:8px;
+       border:1px solid var(--line); font-size:13px; line-height:1.7}
+  .ice .q{color:var(--text); font-weight:600}
+
+  .btnrow{display:flex; gap:10px}
+  button.action{flex:1; padding:12px; border-radius:10px; border:1px solid var(--line);
+                background:var(--surface); color:var(--text); font-size:13px;
+                cursor:pointer}
+  button.action:disabled{opacity:.35; cursor:default}
+  button.action:focus-visible, .mode:focus-visible, .ring-wrap:focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px}
+
+  .toast{position:fixed; left:50%; bottom:28px; transform:translateX(-50%);
+         background:var(--surface); border:1px solid var(--line); color:var(--dim);
+         padding:9px 18px; border-radius:20px; font-size:12px; opacity:0;
+         transition:opacity .3s; pointer-events:none}
+  .toast.show{opacity:1}
+
+  footer{margin-top:auto; display:flex; justify-content:space-between;
+         font-size:11px; color:var(--dim)}
+  footer a{color:var(--dim); cursor:pointer; text-decoration:underline dotted}
+  .devstat{font-family:ui-monospace,monospace}
+</style>
+</head>
+<body>
+<div class="phone">
+  <header>
+    <div class="wordmark">Red<b>Signal</b></div>
+    <div class="who" id="who">…</div>
+  </header>
+
+  <div class="telemetry">
+    <span>STATE&nbsp;<span class="st" id="stState">BLUE_OFFLINE</span></span>
+    <span>MODE&nbsp;<span class="st" id="stMode">off</span></span>
+  </div>
+
+  <div class="ring-stage">
+    <div class="ring-wrap" id="ringWrap" role="button" tabindex="0"
+         aria-label="戒指按钮：双击确认">
+      <svg viewBox="0 0 210 210">
+        <circle class="ring-core" cx="105" cy="105" r="82"/>
+        <!-- 确认弧：self 上半，peer 下半 -->
+        <path id="arcSelf" class="arc" d="M 22 105 A 83 83 0 0 1 188 105"
+              stroke-dasharray="261" stroke-dashoffset="261"/>
+        <path id="arcPeer" class="arc" d="M 188 105 A 83 83 0 0 1 22 105"
+              stroke-dasharray="261" stroke-dashoffset="261"/>
+      </svg>
+      <div class="ring-label">
+        <div class="big" id="ringBig">戒指待命</div>
+        <div class="sub" id="ringSub">选择颜色开始</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modes">
+    <div class="mode r" data-mode="love" role="button" tabindex="0">红<span>恋爱候选</span></div>
+    <div class="mode g" data-mode="friend" role="button" tabindex="0">绿<span>同好交友</span></div>
+    <div class="mode b" data-mode="off" role="button" tabindex="0">蓝<span>暂停·退出</span></div>
+  </div>
+
+  <div class="btnrow">
+    <button class="action" id="btnScan" disabled>扫描附近</button>
+    <button class="action" id="btnAppConfirm" disabled>App 确认（兜底）</button>
+  </div>
+
+  <div class="card" id="cardNotice">
+    <h3>私密提醒</h3>
+    <p id="noticeText"></p>
+    <div class="notice-score" id="noticeScore"></div>
+  </div>
+
+  <div class="card" id="cardEncounter">
+    <h3 id="encTitle">Mutual consent confirmed.</h3>
+    <div id="encFields"></div>
+    <div class="ice" id="iceBox" style="display:none">
+      <p id="iceReason"></p>
+      <p class="q" id="iceQuestion"></p>
+    </div>
+  </div>
+
+  <footer>
+    <span>
+      设备 <span class="devstat" id="devStat">mock</span>
+      · <a id="btnRealRing">连接真实戒指</a>
+    </span>
+    <a id="btnClear">清除本次活动数据</a>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { ClientSession } from '/logic/client_state.js';
+import { MockAdapter } from '/logic/hardware_adapter.js';
+import { ZiloWebBluetoothAdapter } from '/logic/zilo_adapter.js';
+
+const params = new URLSearchParams(location.search);
+const USER = params.get('user') || 'u_demo_a';
+const WS_BASE = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+
+const $ = id => document.getElementById(id);
+const MODE_COLOR = { love:'var(--red)', friend:'var(--green)', off:'var(--dim)' };
+
+/* ---- 会话 ---- */
+const session = new ClientSession(USER, WS_BASE);
+let adapter = new MockAdapter();
+adapter.onButtonPress(() => {});      // 业务在 registerPress 返回值处理
+adapter.connect();
+
+fetch(`/api/profile/${USER}`).then(r=>r.json()).then(p=>{
+  $('who').textContent = `${p.nickname ?? USER} · ${USER}`;
+});
+
+/* ---- UI 状态渲染 ---- */
+function setAccent(mode){
+  document.documentElement.style.setProperty('--accent', MODE_COLOR[mode] || 'var(--dim)');
+}
+function renderState(){
+  $('stState').textContent = session.state;
+  $('stMode').textContent = session.mode;
+  setAccent(session.mode);
+  document.querySelectorAll('.mode').forEach(el=>{
+    el.classList.toggle('on', el.dataset.mode === session.mode);
+  });
+  const discoverable = ['DISCOVERABLE','CANDIDATE_NEARBY'].includes(session.state);
+  $('btnScan').disabled = !discoverable;
+  $('btnAppConfirm').disabled = session.state !== 'NOTIFIED' && session.state !== 'SELF_CONFIRMED';
+
+  const label = {
+    BLUE_OFFLINE:['戒指待命','选择颜色开始'],
+    DISCOVERABLE:['正在匿名发现','广播滚动 ID 中'],
+    CANDIDATE_NEARBY:['附近有候选','等待适配'],
+    NOTIFIED:['双击确认','双击此环或戒指按钮'],
+    SELF_CONFIRMED:['已确认','等待对方…'],
+    ENCOUNTER_CONFIRMED:['双方确认',''],
+    CONNECTED:['已连接','社交卡已交换'],
+    CONTENT_READY:['已连接','破冰内容就绪'],
+  }[session.state] || [session.state,''];
+  $('ringBig').textContent = label[0];
+  $('ringSub').textContent = label[1];
+
+  if (session.state === 'BLUE_OFFLINE' || session.state === 'DISCOVERABLE'){
+    $('arcSelf').classList.remove('lit');
+    $('arcPeer').classList.remove('lit');
+    $('cardNotice').classList.remove('show');
+    $('cardEncounter').classList.remove('show');
+    $('iceBox').style.display = 'none';
+  }
+}
+session.on('state', renderState);
+
+/* ---- 提醒 / 确认 / 结果 ---- */
+session.on('match_notice', m=>{
+  $('noticeText').textContent = m.text;
+  $('noticeScore').textContent =
+    `双向适配 ${m.match_score} · 距离 ${m.proximity_band} · pair ${m.pair_id}`;
+  $('cardNotice').classList.add('show');
+});
+session.on('self_confirmed', ()=>{
+  $('arcSelf').classList.add('lit');
+});
+session.on('encounter', m=>{
+  $('arcSelf').classList.add('lit');
+  $('arcPeer').classList.add('lit');
+  $('cardNotice').classList.remove('show');
+  const box = $('encFields'); box.innerHTML = '';
+  const card = m.card;
+  const label = {nickname:'昵称', shared_interests:'共同兴趣', wechat:'微信',
+                 github:'GitHub', bio:'简介', team_need:'组队需求',
+                 xiaohongshu:'小红书', instagram:'Instagram', avatar:'头像'};
+  for (const [k,v] of Object.entries(card)){
+    const line = document.createElement('div');
+    line.className = 'fieldline';
+    line.innerHTML = `<span class="k">${label[k]||k}</span>
+                      <span class="em">${Array.isArray(v)?v.join(' / '):v}</span>`;
+    box.appendChild(line);
+  }
+  $('cardEncounter').classList.add('show');
+});
+session.on('agent_content', m=>{
+  $('iceReason').textContent = m.connection_reason;
+  $('iceQuestion').textContent = '破冰：' + m.icebreaker;
+  $('iceBox').style.display = 'block';
+});
+session.on('no_connection', m=> toast(m.text));
+session.on('device_offline', m=>{ $('devStat').textContent='offline'; toast(m.text); });
+session.on('sighting_ack', m=>{
+  if (m.reason.startsWith('need_more')) toast('采样中 ' + m.reason.match(/\d\/\d/)?.[0] ?? '');
+});
+
+/* ---- 交互 ---- */
+document.querySelectorAll('.mode').forEach(el=>{
+  const act = ()=> session.setMode(el.dataset.mode);
+  el.addEventListener('click', act);
+  el.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' ') act(); });
+});
+
+$('btnScan').addEventListener('click', async ()=>{
+  const eph = await fetch('/api/ephemerals').then(r=>r.json());
+  const target = eph.find(e => e.user_id !== USER && !e.user_id.includes('red'));
+  if (!target) return toast('附近没有可扫描对象');
+  // 模拟 BLE 持续采样：连续 3 次上报
+  for (let i=0;i<3;i++){
+    session.reportSighting(target.ephemeral_id, -58 - Math.floor(Math.random()*6));
+    await new Promise(r=>setTimeout(r, 350));
+  }
+});
+
+const ringWrap = $('ringWrap');
+function ringPress(){
+  ringWrap.classList.remove('pulse'); void ringWrap.offsetWidth;
+  ringWrap.classList.add('pulse');
+  if (session.state !== 'NOTIFIED' && session.state !== 'SELF_CONFIRMED') return;
+  const result = adapter.registerPress?.();
+  if (result === 'confirmed') session.mockButtonConfirm();
+  else if (result === 'first') toast('再按一次完成双击');
+}
+ringWrap.addEventListener('click', ringPress);
+ringWrap.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' ') ringPress(); });
+
+$('btnAppConfirm').addEventListener('click', ()=> session.appConfirm());
+$('btnClear').addEventListener('click', ()=> { session.clearData(); toast('已清除'); });
+
+$('btnRealRing').addEventListener('click', async ()=>{
+  try{
+    const zilo = new ZiloWebBluetoothAdapter(USER, WS_BASE);
+    zilo.onStatusChange(s=>{ $('devStat').textContent = s; });
+    zilo.onButtonPress(()=> {
+      ringWrap.classList.remove('pulse'); void ringWrap.offsetWidth;
+      ringWrap.classList.add('pulse');
+    });
+    await zilo.connect();
+    adapter = zilo;
+    toast('真实戒指已连接');
+  }catch(err){
+    toast('连接失败：' + err.message);
+  }
+});
+
+/* ---- toast ---- */
+let toastTimer;
+function toast(text){
+  const t = $('toast');
+  t.textContent = text; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.classList.remove('show'), 2200);
+}
+
+session.connect();
+renderState();
+</script>
+</body>
+</html>
