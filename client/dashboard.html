@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RedSignal · 设备融合仪表盘</title>
+<style>
+  :root{
+    --bg:#0e0c16; --surface:#171425; --line:#2a2440;
+    --text:#f0edf7; --dim:#8b85a3;
+    --red:#ff4d6b; --green:#34e08c; --blue:#4d8dff; --amber:#ffb454;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,"PingFang SC","Noto Sans SC",system-ui,sans-serif;
+    padding:24px 16px 48px;display:flex;justify-content:center}
+  .wrap{width:100%;max-width:960px;display:flex;flex-direction:column;gap:20px}
+  header{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
+  h1{font-size:18px;letter-spacing:.2em;text-transform:uppercase;font-weight:800}
+  h1 b{color:var(--red)}
+  .who{font-size:13px;color:var(--dim)}
+  .bar{display:flex;gap:8px;flex-wrap:wrap}
+  button{background:var(--surface);color:var(--text);border:1px solid var(--line);
+    border-radius:10px;padding:9px 14px;font-size:13px;cursor:pointer;transition:.15s}
+  button:hover{border-color:var(--red)}
+  button.primary{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
+  .card h2{font-size:14px;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
+  .dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .row:last-child{border-bottom:none}
+  .row .k{color:var(--dim)}
+  .row .v{font-family:ui-monospace,Menlo,monospace;font-weight:600}
+  .big{display:flex;gap:16px;margin-bottom:6px}
+  .stat{flex:1;text-align:center;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px 6px}
+  .stat .n{font-size:24px;font-weight:800;font-family:ui-monospace,Menlo,monospace}
+  .stat .l{font-size:11px;color:var(--dim);margin-top:2px}
+  .pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;
+    background:var(--bg);border:1px solid var(--line);color:var(--dim);margin:2px}
+  .pill.hot{border-color:var(--red);color:var(--red)}
+  .learn .expl{font-size:14px;line-height:1.6;color:var(--text);margin-top:8px}
+  .muted{color:var(--dim);font-size:12px}
+  .flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--dim)}
+  .flow .step{padding:4px 8px;border:1px solid var(--line);border-radius:8px}
+  .flow .step.done{border-color:var(--green);color:var(--green)}
+  .foot{font-size:11px;color:var(--dim);text-align:center;line-height:1.6}
+  code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>RED<b>SIGNAL</b> · 设备融合</h1>
+    <span class="who">用户 <code id="uid">u_demo_01</code></span>
+  </header>
+
+  <div class="bar">
+    <button class="primary" id="btnRing">🔗 连接戒指 (Web Bluetooth)</button>
+    <button id="btnMock">🎬 演示模拟（无硬件也能看全数据）</button>
+    <button id="btnChat">💬 模拟一次聊天 → 学习偏好</button>
+    <button id="btnStop">⏸ 停止刷新</button>
+  </div>
+
+  <div class="grid">
+    <!-- 戒指卡 -->
+    <div class="card">
+      <h2><span class="dot" id="ringDot"></span>Zilo 戒指 (ring_sound)</h2>
+      <div class="row"><span class="k">连接</span><span class="v" id="rConn">—</span></div>
+      <div class="row"><span class="k">固件</span><span class="v" id="rFw">—</span></div>
+      <div class="row"><span class="k">电量</span><span class="v" id="rBat">—</span></div>
+      <div class="row"><span class="k">最近手势</span><span class="v" id="rGes">—</span></div>
+      <div class="row"><span class="k">最近按钮双击</span><span class="v" id="rBtn">—</span></div>
+      <div class="row"><span class="k">IMU 六轴 (加速度)</span><span class="v" id="rAcc">—</span></div>
+      <div class="row"><span class="k">IMU 六轴 (陀螺仪)</span><span class="v" id="rGyr">—</span></div>
+    </div>
+
+    <!-- 手表卡 -->
+    <div class="card">
+      <h2><span class="dot" id="watchDot"></span>小米手表 (Gadgetbridge)</h2>
+      <div class="big">
+        <div class="stat"><div class="n" id="wHr">—</div><div class="l">心率 bpm</div></div>
+        <div class="stat"><div class="n" id="wSpo2">—</div><div class="l">血氧 %</div></div>
+      </div>
+      <div class="row"><span class="k">今日步数</span><span class="v" id="wSteps">—</span></div>
+      <div class="row"><span class="k">压力</span><span class="v" id="wStress">—</span></div>
+      <div class="row"><span class="k">睡眠</span><span class="v" id="wSleep">—</span></div>
+      <div class="row"><span class="k">手表电量</span><span class="v" id="wBat">—</span></div>
+    </div>
+  </div>
+
+  <!-- 学习偏好卡 -->
+  <div class="card learn">
+    <h2><span class="dot on"></span>Agent 学到的偏好（聊天行为驱动，不含生理数据）</h2>
+    <div class="flow">
+      <span class="step" id="f1">① 标签匹配</span>→
+      <span class="step" id="f2">② 双击确认</span>→
+      <span class="step" id="f3">③ 聊天</span>→
+      <span class="step" id="f4">④ 分析融洽度</span>→
+      <span class="step" id="f5">⑤ 更新偏好</span>
+    </div>
+    <div id="topTags" style="margin-top:12px">—</div>
+    <div class="expl" id="prefExpl">还在了解你的偏好…</div>
+    <div class="muted" id="chatMetrics" style="margin-top:8px"></div>
+  </div>
+
+  <div class="foot">
+    数据来源：戒指 BLE (Web Bluetooth → <code>/ws/device</code> → zilo_protocol) ＋ 手表 (Gadgetbridge → <code>/ws/watch</code>)
+    → <code>wearable_hub</code> 统一融合 → <code>/api/devices/{'{'}user{'}'}</code> 轮询展示。<br>
+    偏好由 <code>/api/chat/analyze</code>（Claude 评融洽度）+ <code>preference.py</code>（确定性学习）更新。
+  </div>
+</div>
+
+<script>
+const UID = new URLSearchParams(location.search).get('user') || 'u_demo_01';
+document.getElementById('uid').textContent = UID;
+
+const $ = id => document.getElementById(id);
+let timer = null, ringDev = null, ringWs = null;
+
+function fmtTuple(t){ return t ? '[' + t.map(x=>Math.round(x)).join(', ') + ']' : '—'; }
+function ago(iso){ if(!iso) return '—'; const s=(Date.now()-new Date(iso))/1000;
+  return s<2?'刚刚':(s<60?Math.round(s)+'秒前':Math.round(s/60)+'分前'); }
+
+async function refresh(){
+  try{
+    const r = await fetch(`/api/devices/${UID}`); if(!r.ok) return;
+    const d = await r.json(); const ring=d.ring, w=d.watch;
+    $('ringDot').classList.toggle('on', ring.connected);
+    $('rConn').textContent = ring.connected ? '已连接' : '未连接';
+    $('rFw').textContent = ring.firmware || '—';
+    $('rBat').textContent = ring.battery_percent>=0 ? ring.battery_percent+'%'+(ring.charging?' ⚡':'') : '—';
+    $('rGes').textContent = ring.last_gesture ? `${ring.last_gesture} (${ago(ring.last_gesture_at)})` : '—';
+    $('rBtn').textContent = ago(ring.last_button_press);
+    $('rAcc').textContent = fmtTuple(ring.last_accel);
+    $('rGyr').textContent = fmtTuple(ring.last_gyro);
+    $('watchDot').classList.toggle('on', w.connected);
+    $('wHr').textContent = w.heart_rate_bpm || '—';
+    $('wSpo2').textContent = w.spo2_percent || '—';
+    $('wSteps').textContent = (w.today_steps||0).toLocaleString();
+    $('wStress').textContent = w.stress_level || '—';
+    $('wSleep').textContent = w.sleep_hours ? w.sleep_hours+' 小时' : '—';
+    $('wBat').textContent = w.battery_percent>=0 ? w.battery_percent+'%' : '—';
+    // 流程点亮
+    $('f2').classList.toggle('done', !!ring.last_button_press);
+  }catch(e){}
+  refreshPref();
+}
+
+async function refreshPref(){
+  try{
+    const r = await fetch(`/api/preference/${UID}`); const d = await r.json();
+    const box = $('topTags');
+    if(d.top_tags && d.top_tags.length){
+      box.innerHTML = d.top_tags.map(([t,w])=>`<span class="pill hot">${t} ×${w}</span>`).join('');
+      $('f5').classList.add('done');
+    }else{ box.innerHTML = '<span class="pill">暂无学习数据，先模拟一次聊天</span>'; }
+    $('prefExpl').textContent = d.explanation || '';
+  }catch(e){}
+}
+
+// ---- 演示模拟：注入戒指+手表数据 ----
+$('btnMock').onclick = async () => {
+  await fetch(`/api/demo/${UID}/mock`, {method:'POST'});
+  refresh();
+};
+
+// ---- 模拟一次聊天 → 触发学习 ----
+$('btnChat').onclick = async () => {
+  const now = Math.floor(Date.now()/1000);
+  const messages = [
+    {sender:UID, ts:now-600, text:'嗨，看你也在做 AI Agent？'},
+    {sender:'u_demo_02', ts:now-580, text:'对！最近在搞戒指硬件 + Agent'},
+    {sender:UID, ts:now-560, text:'太巧了，我也是！要不要交换一下思路'},
+    {sender:'u_demo_02', ts:now-545, text:'好啊 晚上一起？'},
+  ];
+  ['f1','f3','f4'].forEach(id=>$(id).classList.add('done'));
+  const r = await fetch(`/api/chat/${UID}/analyze`, {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({partner_id:'u_demo_02', messages,
+      partner_tags:['AI Agent','硬件','创业']})
+  });
+  const d = await r.json();
+  const m = d.metrics, rp = d.rapport;
+  $('chatMetrics').textContent =
+    `本次聊天：${m.message_count} 条 · 回复速度分 ${m.reply_speed_score} · 活跃 ${m.active_days} 天 · `+
+    `融洽度 ${rp.rapport}（${rp.reason}）· 综合 engagement ${m.engagement}`;
+  refreshPref();
+};
+
+// ---- 真实戒指：Web Bluetooth 连接并转发帧到后端 ----
+const NUS='6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const TX ='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const RX ='6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+$('btnRing').onclick = async () => {
+  if(!navigator.bluetooth){ alert('请用 Chrome/Edge（需 Web Bluetooth）'); return; }
+  try{
+    ringDev = await navigator.bluetooth.requestDevice({
+      filters:[{namePrefix:'ring'}], optionalServices:[NUS]});
+    const server = await ringDev.gatt.connect();
+    const svc = await server.getPrimaryService(NUS);
+    const tx = await svc.getCharacteristic(TX);
+    const rx = await svc.getCharacteristic(RX);
+    ringWs = new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws/device/${UID}`);
+    ringWs.onmessage = async ev => {           // 后端下发帧 → 写给戒指
+      const {send_frame} = JSON.parse(ev.data);
+      if(send_frame){ const b=new Uint8Array(send_frame.match(/../g).map(h=>parseInt(h,16)));
+        try{ await rx.writeValue(b); }catch(_){} }
+    };
+    await tx.startNotifications();
+    tx.addEventListener('characteristicvaluechanged', ev => {   // 戒指上行帧 → 转后端
+      const bytes=new Uint8Array(ev.target.value.buffer);
+      const hex=[...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');
+      if(ringWs.readyState===1) ringWs.send(JSON.stringify({frame:hex}));
+    });
+    $('btnRing').textContent = '✅ 戒指已连接';
+  }catch(e){ alert('连接失败：'+e.message); }
+};
+
+$('btnStop').onclick = () => { if(timer){clearInterval(timer);timer=null;$('btnStop').textContent='▶ 恢复刷新';}
+  else{ timer=setInterval(refresh,1000); $('btnStop').textContent='⏸ 停止刷新'; } };
+
+timer = setInterval(refresh, 1000);
+refresh();
+</script>
+</body>
+</html>

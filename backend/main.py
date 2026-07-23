@@ -208,7 +208,9 @@ async def ws_device(ws: WebSocket, user_id: str) -> None:
     await ws.accept()
     hub.device_ws[user_id] = ws
     wearable_hub.ring_connected(user_id)
-    # 连接建立后自动下发 0x0601 开启上报
+    # 连接建立后：先问系统信息（电量/固件/型号），再开启六轴上报
+    await ws.send_json({"send_frame": zilo_protocol.build_frame(
+        zilo_protocol.CMD_SYS_INFO_REQ).hex()})
     await ws.send_json({"send_frame": zilo_protocol.build_frame(
         zilo_protocol.CMD_REPORT_START).hex()})
     try:
@@ -236,6 +238,15 @@ async def ws_device(ws: WebSocket, user_id: str) -> None:
                 gesture_id = frame.body[4] if len(frame.body) >= 5 else 0
                 gesture_names = {0: "idle", 1: "rotate_back", 2: "rotate_front", 3: "wave"}
                 wearable_hub.ring_gesture(user_id, gesture_names.get(gesture_id, "unknown"))
+            elif kind == "sys_info":
+                # 0x0102 系统信息：解析电量/固件/型号 → 更新融合中心（前端仪表盘展示）
+                info = zilo_protocol.parse_sys_info(frame.body)
+                wearable_hub.ring_connected(
+                    user_id,
+                    firmware=info.get("firmwareVersion", ""),
+                    battery=info.get("batteryPercent", -1),
+                    model=info.get("model", "ring_sound"),
+                )
             elif kind == "time_sync_req":
                 # 戒指开机后反复发 0x0401 求时间；回 0x0402 秒级校时，它才不再刷。
                 await ws.send_json({"send_frame":
@@ -430,10 +441,35 @@ def get_preference(user_id: str):
     }
 
 
+@app.post("/api/demo/{user_id}/mock")
+def demo_mock(user_id: str):
+    """演示用：无硬件/无安卓时，注入一组戒指+手表数据，让仪表盘展示全链路。"""
+    wearable_hub.ring_connected(user_id, firmware="V2.000.0001.0015",
+                                battery=96, model="ring_sound")
+    wearable_hub.ring_gesture(user_id, "wave")
+    wearable_hub.ring_button_press(user_id)
+    wearable_hub.ring_imu(user_id, (128.0, -64.0, 992.0), (12.0, -8.0, 3.0))
+    wearable_hub.watch_realtime_hr(user_id, 74)
+    wearable_hub.watch_realtime_steps(user_id, 8213)
+    snap = wearable_hub.get(user_id)
+    snap.watch.connected = True
+    snap.watch.spo2_percent = 98
+    snap.watch.stress_level = 32
+    snap.watch.sleep_hours = 7.4
+    snap.watch.battery_percent = 81
+    return wearable_hub.get(user_id).to_dict()
+
+
 # ---------------- 静态客户端 ----------------
 @app.get("/")
 def index():
     return FileResponse(CLIENT_DIR / "index.html")
+
+
+@app.get("/dashboard")
+def dashboard():
+    """设备融合演示仪表盘：Ring + 小米手表全数据 + 学习偏好。"""
+    return FileResponse(CLIENT_DIR / "dashboard.html")
 
 
 app.mount("/logic", StaticFiles(directory=CLIENT_DIR / "logic"), name="logic")
