@@ -73,6 +73,7 @@
     <button class="primary" id="btnRing">🔗 连接戒指 (Web Bluetooth)</button>
     <button id="btnMock">🎬 演示模拟（无硬件也能看全数据）</button>
     <button id="btnChat">💬 模拟一次聊天 → 学习偏好</button>
+    <button id="btnIcebreak">📱 破冰官发 iMessage（Photon）</button>
     <button id="btnUpload">⌚ 上传手表数据 (Gadgetbridge 导出)</button>
     <input type="file" id="gbFile" accept=".sqlite,.db,application/octet-stream,*/*" style="display:none">
     <button id="btnStop">⏸ 停止刷新</button>
@@ -228,6 +229,21 @@ $('btnChat').onclick = async () => {
     `本次聊天：${m.message_count} 条 · 回复速度分 ${m.reply_speed_score} · 活跃 ${m.active_days} 天 · `+
     `融洽度 ${rp.rapport}（${rp.reason}）· 综合 engagement ${m.engagement}`;
   refreshPref();
+};
+
+// ---- 破冰官：匹配确认后主动给双方发 iMessage（Photon）----
+$('btnIcebreak').onclick = async () => {
+  const mine = prompt('你的手机号（+区号，评委可用自己的号现场体验）', '+1');
+  if(!mine) return;
+  const other = prompt('对方手机号', '+1');
+  if(!other) return;
+  const r = await fetch(`/api/demo/${UID}/icebreak`, {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({phones:[mine, other], shared_interests:['AI Agent','摄影']})
+  });
+  const d = await r.json();
+  alert((d.delivered ? '✅ 破冰官已发 iMessage 给双方\n\n' : '⚠️ photon-agent 未启动（Mock 未投递）\n\n文案预览：\n')
+        + d.text);
 };
 
 // ---- 上传手表数据：GB 导出的 SQLite → 后端解析 → 仪表盘出真实数据 ----

@@ -1,0 +1,13 @@
+{
+  "name": "redsignal-photon-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RedSignal 破冰官 —— 匹配成功后用 Photon Spectrum 主动给双方发 iMessage",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "spectrum-ts": "^0.1.0"
+  }
+}

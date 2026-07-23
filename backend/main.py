@@ -460,6 +460,26 @@ async def gadgetbridge_upload(user_id: str, file: UploadFile = File(...)):
     return {"ok": True, "bytes": len(data), "watch": snap["watch"]}
 
 
+class IcebreakRequest(BaseModel):
+    phones: list[str]                         # 双方手机号，如 ["+1555...", "+1666..."]
+    shared_interests: list[str] = []
+    event: str = "AdventureX 2026"
+    mode: str = "friend"
+
+
+@app.post("/api/demo/{user_id}/icebreak")
+def demo_icebreak(user_id: str, req: IcebreakRequest):
+    """破冰官演示：匹配确认后，让有手机号的 Agent 主动给双方发 iMessage。
+
+    评委用自己手机号即可现场体验：戴戒指/触发匹配 → 手机收到破冰官消息。
+    photon-agent 未启动时返回 delivered=false（静默降级，不报错）。
+    """
+    from . import photon
+    text = photon.build_icebreaker_text(req.event, req.mode, req.shared_interests)
+    delivered = photon.send_icebreak(req.phones, text, group=True)
+    return {"delivered": delivered, "recipients": req.phones, "text": text}
+
+
 @app.post("/api/demo/{user_id}/mock")
 def demo_mock(user_id: str):
     """演示用：无硬件/无安卓时，注入一组戒指+手表数据，让仪表盘展示全链路。"""
