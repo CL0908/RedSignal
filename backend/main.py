@@ -327,12 +327,19 @@ class GadgetbridgeSyncRequest(BaseModel):
 
 @app.post("/api/devices/{user_id}/gadgetbridge-sync")
 def sync_gadgetbridge(user_id: str, req: GadgetbridgeSyncRequest):
-    """读取 Gadgetbridge 导出的 SQLite 并更新手表数据。"""
+    """读取 Gadgetbridge 导出的 SQLite 并更新+持久化手表数据。"""
     from pathlib import Path
-    health = gadgetbridge.read_db(Path(req.db_path), req.device_address)
+    from . import watch_store
+    p = Path(req.db_path)
+    health = gadgetbridge.read_db(p, req.device_address)
     health.user_id = user_id
     wearable_hub.watch_sync(user_id, health)
-    return wearable_hub.get(user_id).to_dict()
+    stats = watch_store.store_snapshot(user_id, health)   # 持久化时序
+    if p.exists():
+        watch_store.store_raw(user_id, p)                 # 原始库留档
+    snap = wearable_hub.get(user_id).to_dict()
+    snap["stored"] = stats
+    return snap
 
 
 # ---------------- 手表 WebSocket（Android 实时转发） ----------------
@@ -441,6 +448,24 @@ def get_preference(user_id: str):
     }
 
 
+@app.get("/api/watch/{user_id}/dump")
+def watch_dump(user_id: str, limit: int = 500):
+    """导出已持久化的全部手表数据：计数 + 最近样本 + 最新快照 + 原始库列表。"""
+    from . import watch_store
+    return watch_store.dump(user_id, limit=limit)
+
+
+@app.get("/api/watch/{user_id}/raw")
+def watch_raw_latest(user_id: str):
+    """下载该用户最近一次留档的原始 Gadgetbridge 库（全部数据）。"""
+    from . import watch_store
+    d = watch_store.dump(user_id, limit=1)
+    if not d["raw_uploads"]:
+        return {"error": "no raw upload stored yet"}
+    return FileResponse(d["raw_uploads"][0]["path"],
+                        filename=f"gadgetbridge_{user_id}.sqlite")
+
+
 @app.post("/api/devices/{user_id}/gadgetbridge-upload")
 async def gadgetbridge_upload(user_id: str, file: UploadFile = File(...)):
     """网页版手表接入：手机上从 Gadgetbridge 导出 SQLite，在网页里直接上传本文件。
@@ -450,14 +475,18 @@ async def gadgetbridge_upload(user_id: str, file: UploadFile = File(...)):
     """
     import tempfile
     from pathlib import Path
+    from . import watch_store
     data = await file.read()
     tmp = Path(tempfile.gettempdir()) / f"gb_upload_{user_id}.sqlite"
     tmp.write_bytes(data)
     health = gadgetbridge.read_db(tmp)
     health.user_id = user_id
     wearable_hub.watch_sync(user_id, health)
+    stats = watch_store.store_snapshot(user_id, health)   # 持久化全部时序
+    raw_path = watch_store.store_raw(user_id, tmp)         # 原始库整份留档
     snap = wearable_hub.get(user_id).to_dict()
-    return {"ok": True, "bytes": len(data), "watch": snap["watch"]}
+    return {"ok": True, "bytes": len(data), "watch": snap["watch"],
+            "stored": stats, "raw_saved": raw_path}
 
 
 class IcebreakRequest(BaseModel):

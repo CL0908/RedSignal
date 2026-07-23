@@ -17,3 +17,13 @@ tools/probe_log.txt
 
 # OS
 .DS_Store
+
+# 手表持久化
+redsignal_watch.db*
+data/watch_dumps/
+*.sqlite
+redsignal_watch.db
+*.db-wal
+*.db-shm
+data/watch_raw/
+data/
