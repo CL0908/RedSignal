@@ -9,6 +9,7 @@ sightings 与 IMU 是热路径，不落库。
 from __future__ import annotations
 
 import time
+import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -23,6 +24,15 @@ from .persistence import persistence
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
     return dt.isoformat() if dt else None
+
+
+def _is_uuid(s: str) -> bool:
+    """真实用户 id = Supabase auth uid（uuid）；预置演示用户是字面量。"""
+    try:
+        uuid.UUID(str(s))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 class Store:
@@ -54,6 +64,9 @@ class Store:
                           on_conflict="event_id")
         persistence.write("user_event_profiles", {
             "user_id": p.user_id,
+            # 真实用户的 user_id 就是 Supabase auth uid，挂上外键让注销能级联删档案；
+            # 预置演示用户（'u_demo_a'/'d01'）不是 uuid，留 null
+            "auth_user_id": p.user_id if _is_uuid(p.user_id) else None,
             "event_id": p.event_id,
             "nickname": p.nickname,
             "mode": p.mode.value,

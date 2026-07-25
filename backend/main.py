@@ -11,14 +11,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends, FastAPI, File, Header, HTTPException, Request, UploadFile,
+    WebSocket, WebSocketDisconnect,
+)
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agent, chat, confirm, gadgetbridge, mock_data, presence, zilo_protocol
+from . import agent, auth as auth_mod, chat, confirm, gadgetbridge, mock_data, presence, zilo_protocol
 from .models import (
     ButtonEventType, IMUBatch, Mode, RingButtonEvent, SessionState,
 )
@@ -31,6 +36,23 @@ log = logging.getLogger("redsignal")
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="RedSignal")
+
+# 前端在 Vercel、后端在 Railway 时是跨域的：浏览器会先发 preflight，
+# 不放行的话所有 fetch 都失败（WebSocket 不走 CORS，但 REST 全线挂）。
+# 逗号分隔，例：REDSIGNAL_ALLOWED_ORIGINS=https://redsignal.vercel.app
+_origins = [o.strip() for o in
+            auth_mod._load_env().get("REDSIGNAL_ALLOWED_ORIGINS", "").split(",")
+            if o.strip()]
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    log.info("CORS 放行来源: %s", _origins)
+
 mock_data.load()
 
 CLIENT_DIR = Path(__file__).resolve().parent.parent / "client"
@@ -202,9 +224,87 @@ async def _generate_agent_content(encounter_id: str) -> None:
         await broadcast_state(uid)
 
 
+def ensure_profile(user_id: str, token: str = "") -> None:
+    """首次登录的真实用户还没有档案，这里补一个空壳。
+
+    昵称先用邮箱前缀顶上，标签/想找留空——用户进 App 后在「我的标签」
+    和「今天想找」里自己填，走的是已有的 PATCH /api/profile 路径。
+    标签为空时匹配算不出兴趣重合分，自然进不了候选，不会打扰别人。
+    """
+    if store.get_profile(user_id) is not None:
+        return
+    from . import config as cfg
+    from .models import UserEventProfile
+    email = ""
+    if token:
+        try:
+            email = auth_mod.auth.email_from_token(token)
+        except auth_mod.AuthError:
+            pass
+    nickname = (email.split("@")[0] if email else user_id[:8]) or "新用户"
+    store.upsert_profile(UserEventProfile(
+        user_id=user_id, event_id=cfg.DEFAULT_EVENT_ID, mode=Mode.OFF,
+        social_goal="project_teammate", interest_tags=[],
+        communication_style="deep_small_group", share_bundle={}, nickname=nickname,
+    ))
+    log.info("新用户建档: %s (%s)", user_id, nickname)
+
+
+def ensure_ephemeral(user_id: str) -> str:
+    """保证该用户有一个可被扫描到的匿名编号，返回它。
+
+    真实产品里这个编号每几分钟轮换一次（models.RollingPresence 的设计），
+    这里先一人一个稳定值——轮换要连着 BLE 广播一起做，不是后端单方面能定的。
+    """
+    for eph, uid in store.ephemeral_map.items():
+        if uid == user_id:
+            return eph
+    eph = f"eph_{uuid.uuid4().hex[:12]}"
+    store.register_ephemeral(eph, user_id)
+    return eph
+
+
+@app.get("/api/auth/config")
+def auth_config():
+    """前端拿 Supabase 地址与 anon key。
+
+    anon key 设计上就是公开的（每个客户端都要带），与 service_role 完全不同：
+    它受 RLS 约束，而本项目所有表都 enable RLS 且不建 anon policy，
+    所以就算泄露也读不到任何业务数据——前端只用它调 Auth 接口。
+    """
+    env = auth_mod._load_env()
+    return {
+        "supabase_url": env.get("SUPABASE_URL", ""),
+        "anon_key": env.get("SUPABASE_ANON_KEY", ""),
+        "demo_mode": auth_mod.auth.demo_mode,
+        "configured": bool(env.get("SUPABASE_URL") and env.get("SUPABASE_ANON_KEY")),
+    }
+
+
 # ---------------- UI WebSocket ----------------
 @app.websocket("/ws/user/{user_id}")
-async def ws_user(ws: WebSocket, user_id: str) -> None:
+async def ws_user(ws: WebSocket, user_id: str, token: str = "") -> None:
+    """URL 里的 user_id 只是「前端声称的身份」，一律以 token 的 sub 为准。
+
+    没有这一步，任何人把地址栏改成别人的 id 就能收到对方的匹配提醒与聊天。
+    """
+    try:
+        real_id = auth_mod.auth.resolve(token, user_id)
+    except auth_mod.AuthError as e:
+        log.warning("ws_user 鉴权失败: %s", e)
+        await ws.close(code=4401)          # 4401 = 未认证，前端据此跳登录页
+        return
+    if real_id != user_id:
+        # 静默改绑成 token 的身份是"安全但迷惑"的：不会泄露数据，
+        # 但会把客户端 bug 藏起来，而且与 REST 的 403 行为不一致。宁可显式拒绝。
+        log.warning("ws_user 身份不符: URL 声称 %s，token 是 %s", user_id, real_id)
+        await ws.close(code=4403)
+        return
+    ensure_profile(user_id, token)
+    # 每次连接都确保有匿名编号（幂等）：没有它就等于不存在——别人扫不到你
+    # （不进 /api/ephemerals），你被上报时 resolve_ephemeral 也返回 None。
+    # 放在这里而不是 ensure_profile 里，是为了覆盖修复前已建档的用户。
+    ensure_ephemeral(user_id)
     await ws.accept()
     hub.user_ws[user_id] = ws
     await broadcast_state(user_id)
@@ -291,6 +391,23 @@ async def ws_device(ws: WebSocket, user_id: str) -> None:
 
 
 # ---------------- REST（调试用） ----------------
+def require_user(user_id: str, authorization: str = Header(default="")) -> str:
+    """路径里的 user_id 必须与 token 的 sub 一致，否则 403。
+
+    演示模式下预置 mock 用户可无 token 通过（见 auth.Auth.resolve）。
+    """
+    try:
+        real = auth_mod.auth.resolve(authorization, user_id)
+    except auth_mod.AuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    if real != user_id:
+        raise HTTPException(status_code=403, detail="user_id mismatch")
+    return real
+
+
+CallerIsUser = Depends(require_user)
+
+
 class ProfilePatch(BaseModel):
     interest_tags: list[str] | None = None
     social_goal: str | None = None
@@ -307,7 +424,7 @@ def _profile_dict(user_id: str, p) -> dict:
 
 
 @app.get("/api/profile/{user_id}")
-def get_profile(user_id: str):
+def get_profile(user_id: str, _: str = CallerIsUser):
     p = store.get_profile(user_id)
     if p is None:
         return {"error": "not_found"}
@@ -315,7 +432,7 @@ def get_profile(user_id: str):
 
 
 @app.patch("/api/profile/{user_id}")
-def patch_profile(user_id: str, req: ProfilePatch):
+def patch_profile(user_id: str, req: ProfilePatch, _: str = CallerIsUser):
     """App 端编辑标签 / 社交目标 / "今天想找"。写内存 + 触发 Supabase 写回。"""
     p = store.get_profile(user_id)
     if p is None:
@@ -339,7 +456,7 @@ def list_ephemerals():
 # ---------------- 可穿戴设备统一 API ----------------
 
 @app.get("/api/devices/{user_id}")
-def get_devices(user_id: str):
+def get_devices(user_id: str, _: str = CallerIsUser):
     """获取用户所有可穿戴设备的统一快照（Ring + Watch 合并）。"""
     return wearable_hub.get(user_id).to_dict()
 
@@ -354,7 +471,7 @@ class WatchHealthUpdate(BaseModel):
 
 
 @app.post("/api/devices/{user_id}/watch")
-def update_watch(user_id: str, data: WatchHealthUpdate):
+def update_watch(user_id: str, data: WatchHealthUpdate, _: str = CallerIsUser):
     """接收 Android 客户端转发的小米手表实时数据。"""
     if data.heart_rate is not None:
         wearable_hub.watch_realtime_hr(user_id, data.heart_rate)
@@ -378,7 +495,8 @@ class GadgetbridgeSyncRequest(BaseModel):
 
 
 @app.post("/api/devices/{user_id}/gadgetbridge-sync")
-def sync_gadgetbridge(user_id: str, req: GadgetbridgeSyncRequest):
+def sync_gadgetbridge(user_id: str, req: GadgetbridgeSyncRequest,
+                      _: str = CallerIsUser):
     """读取 Gadgetbridge 导出的 SQLite 并更新+持久化手表数据。"""
     from pathlib import Path
     from . import watch_store
@@ -453,7 +571,8 @@ class LabelExtractRequest(BaseModel):
 
 
 @app.post("/api/profile/{user_id}/labels")
-def extract_profile_labels(user_id: str, req: LabelExtractRequest):
+def extract_profile_labels(user_id: str, req: LabelExtractRequest,
+                           _: str = CallerIsUser):
     """自我介绍 → 规范化兴趣标签；若该用户有档案则写回 interest_tags。"""
     labels = agent.extract_labels(req.intro)
     prof = store.get_profile(user_id)
@@ -463,7 +582,7 @@ def extract_profile_labels(user_id: str, req: LabelExtractRequest):
 
 
 @app.get("/api/chat/{user_id}/history/{encounter_id}")
-def chat_history(user_id: str, encounter_id: str):
+def chat_history(user_id: str, encounter_id: str, _: str = CallerIsUser):
     """会话历史。重连/刷新后用它对齐，mine 由后端判定。"""
     try:
         chat.chat_store.partner_of(encounter_id, user_id)   # 参与者校验
@@ -487,7 +606,7 @@ class ChatAnalyzeRequest(BaseModel):
 
 
 @app.post("/api/chat/{user_id}/analyze")
-def analyze_chat(user_id: str, req: ChatAnalyzeRequest):
+def analyze_chat(user_id: str, req: ChatAnalyzeRequest, _: str = CallerIsUser):
     """一次聊天结束 → 评融洽度 + 算 engagement + 更新 user_id 对这类人的偏好。"""
     partner_id, messages = req.partner_id, req.messages
     if req.encounter_id:
@@ -519,7 +638,7 @@ def analyze_chat(user_id: str, req: ChatAnalyzeRequest):
 
 
 @app.get("/api/preference/{user_id}")
-def get_preference(user_id: str):
+def get_preference(user_id: str, _: str = CallerIsUser):
     """用户学到的偏好 + 一句自然语言解释（你可能也喜欢…）。"""
     top = preference.top_tags(user_id)
     return {
@@ -530,14 +649,14 @@ def get_preference(user_id: str):
 
 
 @app.get("/api/watch/{user_id}/dump")
-def watch_dump(user_id: str, limit: int = 500):
+def watch_dump(user_id: str, limit: int = 500, _: str = CallerIsUser):
     """导出已持久化的全部手表数据：计数 + 最近样本 + 最新快照 + 原始库列表。"""
     from . import watch_store
     return watch_store.dump(user_id, limit=limit)
 
 
 @app.get("/api/watch/{user_id}/raw")
-def watch_raw_latest(user_id: str):
+def watch_raw_latest(user_id: str, _: str = CallerIsUser):
     """下载该用户最近一次留档的原始 Gadgetbridge 库（全部数据）。"""
     from . import watch_store
     d = watch_store.dump(user_id, limit=1)
@@ -548,7 +667,8 @@ def watch_raw_latest(user_id: str):
 
 
 @app.post("/api/devices/{user_id}/gadgetbridge-upload")
-async def gadgetbridge_upload(user_id: str, file: UploadFile = File(...)):
+async def gadgetbridge_upload(user_id: str, file: UploadFile = File(...),
+                              _: str = CallerIsUser):
     """网页版手表接入：手机上从 Gadgetbridge 导出 SQLite，在网页里直接上传本文件。
 
     后端把上传的库落到临时文件 → gadgetbridge.read_db 解析 → 更新 wearable_hub。
@@ -578,7 +698,7 @@ class IcebreakRequest(BaseModel):
 
 
 @app.post("/api/demo/{user_id}/icebreak")
-def demo_icebreak(user_id: str, req: IcebreakRequest):
+def demo_icebreak(user_id: str, req: IcebreakRequest, _: str = CallerIsUser):
     """破冰官演示：匹配确认后，让有手机号的 Agent 主动给双方发 iMessage。
 
     评委用自己手机号即可现场体验：戴戒指/触发匹配 → 手机收到破冰官消息。
@@ -591,7 +711,7 @@ def demo_icebreak(user_id: str, req: IcebreakRequest):
 
 
 @app.post("/api/demo/{user_id}/mock")
-def demo_mock(user_id: str):
+def demo_mock(user_id: str, _: str = CallerIsUser):
     """演示用：无硬件/无安卓时，注入一组戒指+手表数据，让仪表盘展示全链路。"""
     wearable_hub.ring_connected(user_id, firmware="V2.000.0001.0015",
                                 battery=96, model="ring_sound")

@@ -13,9 +13,49 @@
   'use strict';
 
   const params = new URLSearchParams(location.search);
-  const USER = params.get('user') || 'u_demo_a';
-  const HTTP = location.origin;
+  /* 后端地址。同机部署时就是当前源；前端上 Vercel、后端上 Railway 时是两个域，
+     用 <meta name="rs-api-base" content="https://xxx.up.railway.app"> 指过去。
+     跨域时后端必须配 REDSIGNAL_ALLOWED_ORIGINS，否则 REST 全被 CORS 拦。 */
+  const HTTP = (document.querySelector('meta[name="rs-api-base"]')?.content || '').trim()
+               || location.origin;
   const WS = HTTP.replace(/^http/, 'ws');
+  const SESSION_KEY = 'redsignal.session';
+
+  /* 身份来源有两条，优先级从高到低：
+       1) Supabase 登录会话（localStorage）——真实用户，user_id 是 auth uid，
+          后端会用 token 的 sub 复核，前端说了不算；
+       2) ?user=u_demo_a 这种预置演示用户——只有后端演示模式开着才放行。
+     两条都没有就跳登录页。 */
+  function loadSession() {
+    try {
+      const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+      if (s && s.access_token && s.expires_at * 1000 > Date.now()) return s;
+      if (s) localStorage.removeItem(SESSION_KEY);   // 过期的清掉
+    } catch { /* 坏数据当没登录 */ }
+    return null;
+  }
+
+  const session = loadSession();
+  const demoUser = params.get('user');
+  const USER = session ? session.user_id : (demoUser || '');
+  const TOKEN = session ? session.access_token : '';
+
+  if (!USER) {
+    location.replace('login.html');
+    return;
+  }
+
+  function authHeaders(extra) {
+    const h = Object.assign({}, extra || {});
+    if (TOKEN) h['Authorization'] = 'Bearer ' + TOKEN;
+    return h;
+  }
+
+  function logout() {
+    localStorage.removeItem(SESSION_KEY);
+    location.replace('login.html');
+  }
+  window.rsLogout = logout;
 
   // 红/绿/蓝 ←→ 后端 Mode 枚举（models.py::Mode）
   const MODE_TO_API = { red: 'love', green: 'friend', blue: 'off' };
@@ -49,7 +89,10 @@
   }
 
   async function api(path, opts) {
-    const r = await fetch(HTTP + path, opts);
+    const o = Object.assign({}, opts);
+    o.headers = authHeaders(o.headers);
+    const r = await fetch(HTTP + path, o);
+    if (r.status === 401) { logout(); throw new Error('unauthenticated'); }
     if (!r.ok) throw new Error(path + ' -> ' + r.status);
     return r.json();
   }
@@ -180,18 +223,26 @@
 
   // -------------------------------------------------------- WebSocket 主通道
   function connect() {
-    RS.ws = new WebSocket(`${WS}/ws/user/${USER}`);
+    // token 走 query：WebSocket 握手没法带自定义头，这是浏览器 API 的限制。
+    // 后端只认 token 的 sub，URL 里的 user_id 仅作声明。
+    const q = TOKEN ? `?token=${encodeURIComponent(TOKEN)}` : '';
+    RS.ws = new WebSocket(`${WS}/ws/user/${encodeURIComponent(USER)}${q}`);
 
     RS.ws.onopen = () => {
       RS.online = true;
-      setRingStatus('已连接后端 · ' + USER, true);
+      setRingStatus('已连接 · ' + (session?.email || USER), true);
       // 页面上当前选中的模式即时同步给后端
       const sel = document.querySelector('.mode-card.selected')?.dataset.mode;
       if (sel) send({ action: 'set_mode', mode: MODE_TO_API[sel] });
     };
 
-    RS.ws.onclose = () => {
+    RS.ws.onclose = (e) => {
       RS.online = false;
+      if (e.code === 4401 || e.code === 4403) {
+        // 4401 = token 过期/伪造；4403 = URL 身份与 token 不符（客户端 bug）
+        logout();
+        return;
+      }
       setRingStatus('后端离线 · 演示模式', false);
       setTimeout(connect, 2000);
     };
@@ -335,7 +386,16 @@
       }
       if (p.nickname) {
         const who = document.querySelector('.logo');
-        if (who) who.title = `${p.nickname} · ${USER}`;
+        if (who) who.title = `${p.nickname} · ${session?.email || USER}`;
+      }
+      // 新用户档案是空壳（ensure_profile 建的），提示去填标签，
+      // 否则算不出兴趣重合分，永远进不了候选
+      if (session && (!p.interest_tags || !p.interest_tags.length)) {
+        setTimeout(() => {
+          if (typeof window.toast === 'function') {
+            window.toast('先在「我的标签」里加几个标签，才能被匹配到');
+          }
+        }, 1200);
       }
     } catch { /* 静默 */ }
   }
@@ -476,6 +536,18 @@
         ephemeral_id: e.ephemeral_id,
         rssi: -58 - Math.floor(Math.random() * 8),
       }));
+  }
+
+  // 顶栏连接状态点一下 = 退出登录（真实用户才给，演示用户没什么可退的）
+  if (session) {
+    const rs = document.querySelector('.ring-status');
+    if (rs) {
+      rs.style.cursor = 'pointer';
+      rs.title = '点击退出登录';
+      rs.addEventListener('click', () => {
+        if (confirm(`退出登录？\n当前账号：${session.email || USER}`)) logout();
+      });
+    }
   }
 
   // ---------------------------------------------------------------- 启动

@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- 后端地址。留空 = 与前端同源。前端上 Vercel、后端上 Railway 时，
+       把 content 填成后端域名（如 https://redsignal.up.railway.app），
+       并在后端设 REDSIGNAL_ALLOWED_ORIGINS 放行本站。 -->
+  <meta name="rs-api-base" content="">
   <title>REDSIGNAL</title>
   <style>
     :root {

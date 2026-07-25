@@ -18,8 +18,14 @@ create table if not exists public.events (
 
 -- ------------------------------------------------- 用户在某场活动的档案
 -- 对应 UserEventProfile + store.states + store.user_quiet_until
+-- user_id 保持 text 而不是 uuid：真实用户的 id 就是 Supabase auth uid（uuid 字符串），
+-- 但 mock_data 的预置用户是 'u_demo_a' / 'd01' 这类字面量，两者必须共存，
+-- 否则「舞池密集场景」「冷却」「稳定配对」那几套演示没有数据可跑。
+-- auth_user_id 是真实用户到 auth.users 的硬链接（demo 行为 null）：
+-- 用户注销账号时，档案随之级联删除——这是隐私要求，不是可选项。
 create table if not exists public.user_event_profiles (
   user_id             text not null,
+  auth_user_id        uuid references auth.users(id) on delete cascade,
   event_id            text not null references public.events(event_id) on delete cascade,
   nickname            text not null,
   mode                text not null default 'off'
@@ -43,10 +49,17 @@ create table if not exists public.user_event_profiles (
     not (share_bundle ?| array['phone','real_name','precise_location','health','raw_audio'])
   )
 );
+-- 补列必须在建索引之前：表已存在时 `create table if not exists` 整段跳过，
+-- 上面 CREATE 里的 auth_user_id 不会生效，索引就会报 42703 column does not exist。
+alter table public.user_event_profiles
+  add column if not exists auth_user_id uuid references auth.users(id) on delete cascade;
+
 create index if not exists profiles_tags_idx
   on public.user_event_profiles using gin (normalized_tags);
 create index if not exists profiles_discoverable_idx
   on public.user_event_profiles (event_id, mode) where mode <> 'off';
+create index if not exists profiles_auth_user_idx
+  on public.user_event_profiles (auth_user_id) where auth_user_id is not null;
 
 -- 状态机变更审计（可选，但排障时很值）
 create table if not exists public.state_transitions (
@@ -198,6 +211,7 @@ alter table public.sightings             enable row level security;
 alter table public.candidate_pairs       enable row level security;
 alter table public.ring_button_events    enable row level security;
 alter table public.encounters            enable row level security;
+alter table public.chat_messages         enable row level security;  -- 私聊内容，最敏感的一张
 alter table public.device_status         enable row level security;
 alter table public.watch_health_samples  enable row level security;
 alter table public.tag_synonyms          enable row level security;

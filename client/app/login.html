@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- 与 index.html 保持一致：留空 = 同源；跨域部署时填后端域名 -->
+  <meta name="rs-api-base" content="">
+  <title>REDSIGNAL · 登录</title>
+  <style>
+    :root {
+      --bg: #F7F1E8; --card: #FFFBF5; --text: #2C2620; --sub: #8A8178;
+      --red: #D95D5D; --line: rgba(44,38,32,0.14);
+    }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html, body { height:100%; }
+    body {
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+      background:#E8E0D4; color:var(--text);
+      display:flex; justify-content:center; align-items:center; overflow:hidden;
+    }
+    #shell {
+      width:100%; max-width:430px; height:100dvh; max-height:932px;
+      background:var(--bg); position:relative; overflow-y:auto;
+      display:flex; flex-direction:column; justify-content:center;
+      padding:32px 30px calc(32px + env(safe-area-inset-bottom));
+      box-shadow:0 0 0 1px rgba(44,38,32,0.06), 0 20px 60px rgba(44,38,32,0.18);
+    }
+    @supports not (height: 100dvh) { #shell { height:100vh; } }
+
+    .brand { font-size:26px; font-weight:800; letter-spacing:3px; margin-bottom:6px; }
+    .brand span { color:var(--red); }
+    .tagline { font-size:14px; color:var(--sub); line-height:1.6; margin-bottom:34px; }
+
+    .tabs { display:flex; gap:6px; margin-bottom:22px; }
+    .tab {
+      flex:1; text-align:center; padding:10px 0; font-size:14px; font-weight:600;
+      color:var(--sub); border:1.2px solid var(--line); border-radius:14px;
+      background:transparent; cursor:pointer;
+    }
+    .tab.active { color:var(--text); background:var(--card); border-color:rgba(44,38,32,0.3); }
+
+    label { display:block; font-size:13px; color:var(--sub); margin:0 0 7px 2px; }
+    input {
+      width:100%; padding:13px 15px; font-size:16px; color:var(--text);
+      background:var(--card); border:1.2px solid var(--line); border-radius:14px;
+      margin-bottom:16px; font-family:inherit;
+    }
+    input:focus { outline:none; border-color:var(--red); }
+
+    button.primary {
+      width:100%; padding:14px 0; font-size:15px; font-weight:700; color:#FFFBF5;
+      background:var(--text); border:0; border-radius:16px; cursor:pointer;
+      margin-top:6px;
+    }
+    button.primary:disabled { opacity:.5; }
+
+    .msg { font-size:13px; line-height:1.6; margin-top:16px; padding:11px 14px;
+           border-radius:12px; display:none; }
+    .msg.err { display:block; background:rgba(217,93,93,0.12); color:#9C3B3B; }
+    .msg.ok  { display:block; background:rgba(95,168,128,0.14); color:#3D7355; }
+    .msg.info{ display:block; background:rgba(44,38,32,0.07); color:var(--sub); }
+
+    .demo { margin-top:28px; padding-top:20px; border-top:1px dashed var(--line); }
+    .demo-title { font-size:12px; color:var(--sub); margin-bottom:10px; }
+    .demo-btns { display:flex; gap:8px; flex-wrap:wrap; }
+    .demo-btns a {
+      flex:1; min-width:120px; text-align:center; padding:10px 0; font-size:13px;
+      color:var(--sub); text-decoration:none;
+      border:1.2px solid var(--line); border-radius:12px; background:var(--card);
+    }
+  </style>
+</head>
+<body>
+  <div id="shell">
+    <div class="brand"><span>RED</span>SIGNAL</div>
+    <div class="tagline">戴上戒指，走进人群。<br>附近有与你适配的人时，你会知道。</div>
+
+    <div class="tabs">
+      <button class="tab active" id="tab-signin" type="button">登录</button>
+      <button class="tab" id="tab-signup" type="button">注册</button>
+    </div>
+
+    <form id="form" autocomplete="on">
+      <label for="email">邮箱</label>
+      <input id="email" type="email" inputmode="email" autocomplete="email"
+             placeholder="you@gmail.com" required>
+
+      <label for="password">密码</label>
+      <input id="password" type="password" autocomplete="current-password"
+             placeholder="至少 6 位" minlength="6" required>
+
+      <button class="primary" id="submit" type="submit">登录</button>
+    </form>
+
+    <div class="msg" id="msg"></div>
+
+    <div class="demo" id="demo" hidden>
+      <div class="demo-title">演示模式（预置用户，无需注册）</div>
+      <div class="demo-btns">
+        <a href="./?user=u_demo_a">信号狐 u_demo_a</a>
+        <a href="./?user=u_demo_b">夜航鲸 u_demo_b</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SESSION_KEY = 'redsignal.session';
+    const API = (document.querySelector('meta[name="rs-api-base"]')?.content || '').trim()
+                || location.origin;
+    let mode = 'signin';
+    let cfg = null;
+
+    const $ = id => document.getElementById(id);
+    const msgEl = $('msg');
+
+    function say(text, kind) {
+      msgEl.textContent = text;
+      msgEl.className = 'msg ' + (kind || 'info');
+    }
+
+    function setMode(next) {
+      mode = next;
+      $('tab-signin').classList.toggle('active', next === 'signin');
+      $('tab-signup').classList.toggle('active', next === 'signup');
+      $('submit').textContent = next === 'signin' ? '登录' : '注册';
+      $('password').autocomplete = next === 'signin' ? 'current-password' : 'new-password';
+      msgEl.className = 'msg';
+    }
+    $('tab-signin').onclick = () => setMode('signin');
+    $('tab-signup').onclick = () => setMode('signup');
+
+    // 已登录就直接进 App
+    try {
+      const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+      if (s && s.access_token && s.expires_at * 1000 > Date.now()) {
+        location.replace('./');
+      }
+    } catch { /* 坏数据当没登录 */ }
+
+    (async function loadConfig() {
+      try {
+        cfg = await (await fetch(API + '/api/auth/config')).json();
+      } catch {
+        say('连不上后端，请确认服务已启动。', 'err');
+        return;
+      }
+      $('demo').hidden = !cfg.demo_mode;
+      if (!cfg.configured) {
+        say('后端还没配 Supabase（缺 SUPABASE_URL 或 SUPABASE_ANON_KEY），' +
+            '注册登录暂不可用。可先用下方演示用户。', 'err');
+        $('submit').disabled = true;
+      }
+    })();
+
+    async function callAuth(path, body) {
+      const r = await fetch(`${cfg.supabase_url}/auth/v1/${path}`, {
+        method: 'POST',
+        headers: {
+          'apikey': cfg.anon_key,
+          'Authorization': `Bearer ${cfg.anon_key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        // Supabase 的报错字段在不同版本间叫法不一，逐个兜
+        throw new Error(data.msg || data.error_description || data.message ||
+                        data.error || `请求失败 (${r.status})`);
+      }
+      return data;
+    }
+
+    function saveSession(d) {
+      if (!d.access_token) return false;
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        access_token: d.access_token,
+        refresh_token: d.refresh_token,
+        expires_at: d.expires_at ||
+                    Math.floor(Date.now() / 1000) + (d.expires_in || 3600),
+        user_id: d.user?.id || '',
+        email: d.user?.email || '',
+      }));
+      return true;
+    }
+
+    $('form').onsubmit = async (e) => {
+      e.preventDefault();
+      const email = $('email').value.trim();
+      const password = $('password').value;
+      $('submit').disabled = true;
+      say(mode === 'signin' ? '登录中…' : '注册中…', 'info');
+      try {
+        if (mode === 'signup') {
+          const d = await callAuth('signup', { email, password });
+          if (saveSession(d)) {
+            say('注册成功，正在进入…', 'ok');
+            return location.replace('./');
+          }
+          // 项目开了邮箱确认时不会直接给 token
+          say('注册成功。该项目要求先确认邮箱，请查收邮件后回来登录。', 'ok');
+          setMode('signin');
+        } else {
+          const d = await callAuth('token?grant_type=password', { email, password });
+          if (saveSession(d)) {
+            say('登录成功，正在进入…', 'ok');
+            return location.replace('./');
+          }
+          say('登录返回异常，请重试。', 'err');
+        }
+      } catch (err) {
+        const t = String(err.message || err);
+        if (/already registered|already exists/i.test(t)) {
+          say('这个邮箱已经注册过了，直接登录即可。', 'err');
+          setMode('signin');
+        } else if (/Invalid login credentials/i.test(t)) {
+          say('邮箱或密码不对。', 'err');
+        } else if (/Password should be/i.test(t)) {
+          say('密码太短，至少 6 位。', 'err');
+        } else {
+          say(t, 'err');
+        }
+      } finally {
+        $('submit').disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>

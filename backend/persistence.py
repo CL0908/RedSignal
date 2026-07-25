@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from collections import deque
 from pathlib import Path
 from typing import Optional
@@ -32,6 +33,23 @@ log = logging.getLogger("redsignal.persistence")
 
 _MAX_QUEUE = 10_000          # 满了丢最旧的，绝不无限增长
 _TIMEOUT = 5.0
+_MAX_ATTEMPTS = 3            # 瞬时网络故障重试次数
+_RETRY_BACKOFF = 0.5         # 秒，按次数线性递增
+# PostgREST 在列不存在时返回 PGRST204，message 形如
+#   Could not find the 'auth_user_id' column of 'user_event_profiles' in the schema cache
+_UNKNOWN_COL_RE = re.compile(r"Could not find the '([^']+)' column")
+
+
+def _unknown_column(resp) -> Optional[str]:
+    """从 PostgREST 的报错里认出「这一列不存在」，返回列名。"""
+    try:
+        body = resp.json()
+    except Exception:
+        return None
+    if not isinstance(body, dict) or body.get("code") != "PGRST204":
+        return None
+    m = _UNKNOWN_COL_RE.search(body.get("message") or "")
+    return m.group(1) if m else None
 
 
 def _load_env() -> dict:
@@ -56,6 +74,8 @@ class Persistence:
         self._queue: deque[tuple] = deque(maxlen=_MAX_QUEUE)
         self._worker: Optional[asyncio.Task] = None
         self._dropped = 0
+        # (表, 列) —— 线上 schema 里不存在的列，写入时自动摘掉
+        self._missing_columns: set[tuple[str, str]] = set()
         if not self.enabled:
             log.info("persistence disabled (缺 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)")
 
@@ -67,14 +87,14 @@ class Persistence:
             return
         if len(self._queue) == self._queue.maxlen:
             self._dropped += 1
-        self._queue.append(("write", table, row, on_conflict, None))
+        self._queue.append(("write", table, row, on_conflict, None, 0))
         self._wake()
 
     def patch(self, table: str, filters: str, row: dict) -> None:
         """按 PostgREST 过滤串更新，例如 filters='user_id=eq.x&event_id=eq.y'。"""
         if not self.enabled:
             return
-        self._queue.append(("patch", table, row, None, filters))
+        self._queue.append(("patch", table, row, None, filters, 0))
         self._wake()
 
     def _wake(self) -> None:
@@ -85,6 +105,15 @@ class Persistence:
             return
         if self._worker is None or self._worker.done():
             self._worker = loop.create_task(self._drain())
+            self._worker.add_done_callback(self._rewake_if_pending)
+
+    def _rewake_if_pending(self, _task) -> None:
+        """补掉丢唤醒：worker 判空正要退出时若来了新行，_wake 会看到
+        worker 尚未 done 而不起新的，那一行就搁在队列里，得等下次写入
+        才被捎带出去——空闲前的最后一次写入因此可能迟迟不落库。
+        worker 结束后再看一眼队列，有货就重新拉起。"""
+        if self._queue:
+            self._wake()
 
     # ---------------- 消费 ----------------
 
@@ -97,16 +126,29 @@ class Persistence:
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT, headers=headers) as client:
                 while self._queue:
-                    op, table, row, on_conflict, filters = self._queue.popleft()
+                    op, table, row, on_conflict, filters, attempts = self._queue.popleft()
                     try:
                         if op == "write":
                             await self._post(client, table, row, on_conflict)
                         else:
                             await self._patch(client, table, filters, row)
                     except Exception as e:                       # noqa: BLE001
-                        log.warning("persist %s %s failed: %s", op, table, e)
+                        # 瞬时网络故障（实测见过 ConnectTimeout）以前是直接丢行的——
+                        # 对"值得留档"的写回层来说那就是静默数据丢失。放回队首重试，
+                        # 队首而非队尾是为了保住 FK 顺序（父行必须先落地）。
+                        if attempts + 1 < _MAX_ATTEMPTS:
+                            self._queue.appendleft(
+                                (op, table, row, on_conflict, filters, attempts + 1))
+                            log.warning("persist %s %s 第 %d 次失败(%s)，%.1fs 后重试",
+                                        op, table, attempts + 1, type(e).__name__,
+                                        _RETRY_BACKOFF * (attempts + 1))
+                            await asyncio.sleep(_RETRY_BACKOFF * (attempts + 1))
+                        else:
+                            self._dropped += 1
+                            log.error("persist %s %s 重试 %d 次仍失败，丢弃该行: %r",
+                                      op, table, _MAX_ATTEMPTS, e)
         except Exception as e:                                   # noqa: BLE001
-            log.warning("persistence worker crashed: %s", e)
+            log.warning("persistence worker crashed: %r", e)
 
     async def _post(self, client: httpx.AsyncClient, table: str,
                     row: dict, on_conflict: str | None) -> None:
@@ -115,8 +157,22 @@ class Persistence:
         if on_conflict:
             url += f"?on_conflict={on_conflict}"
             headers["Prefer"] = "return=minimal,resolution=merge-duplicates"
+        row = {k: v for k, v in row.items() if (table, k) not in self._missing_columns}
         r = await client.post(url, json=row, headers=headers)
+
+        # 代码比线上 schema 新时（迁移还没跑），PostgREST 报 PGRST204 指出未知列。
+        # 与其让整行写入失败、数据静默丢掉，不如摘掉那一列重发一次，
+        # 并记住它——迁移跑完重启进程即恢复完整写入。
         if r.status_code >= 300:
+            col = _unknown_column(r)
+            if col and (table, col) in self._missing_columns:
+                pass                       # 已经摘过还失败，说明是别的问题
+            elif col:
+                self._missing_columns.add((table, col))
+                log.warning("表 %s 缺列 %s（迁移未跑？），本次起跳过该列继续写入。"
+                            "补列：docs/supabase_schema.sql 末尾的 alter table 语句",
+                            table, col)
+                return await self._post(client, table, row, on_conflict)
             log.warning("persist %s -> %s %s", table, r.status_code, r.text[:200])
 
     async def _patch(self, client: httpx.AsyncClient, table: str,
