@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (agent, auth as auth_mod, chat, confirm, gadgetbridge, matching,
-               mock_data, presence, transcription, zilo_protocol)
+               mock_data, presence, tags, transcription, zilo_protocol)
 from .ring_audio import RingAudioSession
 from .models import (
     ButtonEventType, IMUBatch, Mode, RingButtonEvent, SessionState,
@@ -378,7 +378,15 @@ def ensure_profile(user_id: str, token: str = "") -> None:
         return
     from . import config as cfg
     from .models import UserEventProfile
-    nickname = generate_nickname(user_id)
+    # 优先用注册时填的用户名；没填才退回匿名代号。
+    # 绝不用邮箱前缀——那等于把邮箱的一半交给陌生人。
+    nickname = ""
+    if token:
+        try:
+            nickname = auth_mod.auth.display_name_from_token(token)
+        except auth_mod.AuthError:
+            pass
+    nickname = nickname or generate_nickname(user_id)
     store.upsert_profile(UserEventProfile(
         user_id=user_id, event_id=cfg.DEFAULT_EVENT_ID, mode=Mode.OFF,
         social_goal="project_teammate", interest_tags=[],
@@ -632,6 +640,35 @@ def patch_profile(user_id: str, req: ProfilePatch, _: str = CallerIsUser):
 def list_ephemerals():
     """Demo 用：列出可扫描的匿名 ID（真实场景由 BLE 广播承载）。"""
     return [{"ephemeral_id": e, "user_id": u} for e, u in store.ephemeral_map.items()]
+
+
+@app.get("/api/nearby/{user_id}")
+def nearby(user_id: str, limit: int = 3, _: str = CallerIsUser):
+    """按适配分给出前 N 个推荐。
+
+    为什么需要它：手机（iOS 与安卓浏览器）都拿不到 BLE，没法按距离筛人，
+    "最近的那一个"无从谈起。所以改成把最合适的几个一起列出来，
+    由用户自己挑——这比假装知道谁离得最近要诚实。
+
+    只回昵称和共同兴趣，不回 user_id/邮箱等身份信息：
+    没有双向确认之前，双方都不该知道对方是谁（share_bundle 的隐私模型）。
+    """
+    me = store.get_profile(user_id)
+    if me is None:
+        return {"items": []}
+    ranked = matching.recommend(user_id, limit=max(1, min(limit, 10)))
+    items = []
+    for c in ranked:
+        them = store.get_profile(c.user_id)
+        if them is None:
+            continue
+        items.append({
+            "nickname": them.nickname,
+            "shared_interests": tags.display_shared(them.interest_tags, me.interest_tags),
+            "match_score": c.compat_score,
+            "wish": them.share_bundle.get("team_need", ""),
+        })
+    return {"items": items, "my_tags": me.interest_tags}
 
 
 # ---------------- 可穿戴设备统一 API ----------------

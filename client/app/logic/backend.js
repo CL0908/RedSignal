@@ -469,9 +469,34 @@
     } catch { /* 静默 */ }
   }
 
+  /* 标签与「今天想找」本来就是改一次存一次，但界面上没有任何反馈，
+     用户不知道存没存，会怀疑白填了。给一个短暂的「已保存」。 */
+  function savedHint() {
+    let el = document.getElementById('rs-saved');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'rs-saved';
+      el.style.cssText = [
+        'position:absolute', 'left:50%', 'transform:translateX(-50%)',
+        'bottom:96px', 'z-index:45', 'background:rgba(44,38,32,.86)',
+        'color:#f6f1e7', 'padding:7px 16px', 'border-radius:20px',
+        'font-size:12px', 'opacity:0', 'transition:opacity .2s',
+        'pointer-events:none',
+      ].join(';');
+      el.textContent = '已自动保存';
+      document.getElementById('app')?.appendChild(el);
+    }
+    el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.opacity = '0'; }, 1400);
+  }
+
   const pushTags = () => {
     const t = getTags();
-    if (t) jsonPatch(`/api/profile/${USER}`, { interest_tags: t.slice() });
+    if (!t) return;
+    jsonPatch(`/api/profile/${USER}`, { interest_tags: t.slice() }).then(r => {
+      if (r) savedHint();
+    });
   };
 
   // ---------------------------------------------------- 包裹已有全局函数
@@ -495,7 +520,8 @@
   wrap('removeTag', pushTags);
   wrap('confirmWish', () => {
     if (typeof currentWish !== 'undefined') {
-      jsonPatch(`/api/profile/${USER}`, { wish: currentWish });
+      jsonPatch(`/api/profile/${USER}`, { wish: currentWish })
+        .then(r => { if (r) savedHint(); });
     }
   });
 
@@ -566,6 +592,61 @@
     if (typeof window.goTo === 'function') window.goTo('status');
   }
 
+  /* 外部用户版的「附近」：列出最合得来的几个人。
+
+     为什么是列表而不是"最近的那一位"：手机浏览器（iOS 与安卓一样）
+     拿不到 BLE，没法按距离筛人，"谁离你最近"根本无从判断。
+     与其假装知道，不如把最合适的几个一起摆出来让用户自己挑。 */
+  async function loadRecommendations() {
+    let data;
+    try {
+      data = await api(`/api/nearby/${USER}?limit=3`);
+    } catch {
+      setRadar('暂时连不上', '稍后再试一次');
+      return;
+    }
+    const items = (data && data.items) || [];
+    const box = ensureRecoBox();
+    if (!items.length) {
+      setRadar('还没有合适的人', '换几个更具体的标签，或稍后再看');
+      box.innerHTML = '';
+      return;
+    }
+    setRadar(`为你找到 ${items.length} 位`, '都和你的兴趣与目标对得上');
+    box.innerHTML = items.map(it => {
+      const shared = (it.shared_interests || []).slice(0, 3)
+        .map(s => `<span style="display:inline-block;padding:2px 8px;margin:2px 4px 2px 0;
+          border-radius:10px;background:rgba(44,38,32,.07);font-size:11px">${esc(s)}</span>`)
+        .join('');
+      return `<div style="background:var(--card);border:1.2px solid rgba(44,38,32,.12);
+          border-radius:16px;padding:12px 14px;margin-bottom:10px;text-align:left">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <strong style="font-size:15px">${esc(it.nickname || '匿名')}</strong>
+            <span style="font-size:11px;color:var(--sub)">适配 ${it.match_score}</span>
+          </div>
+          ${it.wish ? `<div style="font-size:12px;color:var(--sub);margin-top:3px">
+            今天想找：${esc(it.wish)}</div>` : ''}
+          <div style="margin-top:6px">${shared}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function ensureRecoBox() {
+    let b = document.getElementById('rs-reco');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'rs-reco';
+      b.style.cssText = 'margin-top:18px;width:100%;max-width:340px';
+      document.querySelector('.radar-status')?.after(b);
+    }
+    return b;
+  }
+
   wrap('startDiscovery', () => {
     const mode = document.querySelector('.mode-card.selected')?.dataset.mode || 'red';
     if (mode === 'blue') window.selectMode('red');
@@ -576,12 +657,12 @@
       RS.flowRunning = true;
       runFlow().finally(() => { RS.flowRunning = false; });
     } else {
-      // 外部用户：等真实匹配。没标签就匹配不出来，先提示清楚。
-      const tags = getTags();
-      if (!tags || !tags.length) {
+      const t = getTags();
+      if (!t || !t.length) {
         setRadar('还差一步', '先回「信号」页加几个标签，才能算出适合你的人');
       } else {
-        setRadar('正在匿名发现', '正在为你寻找适配的人…');
+        setRadar('正在为你寻找', '按兴趣与目标匹配中…');
+        loadRecommendations();
       }
     }
   });

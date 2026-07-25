@@ -123,6 +123,41 @@ def proximity_band(rssi_values: list[int]) -> str:
 
 
 # ---------------- 候选收集与排序 ----------------
+def recommend(observer_id: str, limit: int = 3) -> list[Candidate]:
+    """按适配分推荐前 N 人——**不依赖 BLE 观测**。
+
+    与 collect_candidates 的区别：后者要求候选被连续扫到
+    PRESENCE_MIN_SIGHTINGS 次，那是「近场发现」的语义。
+    但手机浏览器（iOS 与安卓都一样）拿不到 BLE，永远攒不够观测次数，
+    候选表会一直是空的。所以这里直接对全场可发现的人算分，
+    硬性门槛（模式/拉黑/过期）照旧生效，只是不看距离。
+
+    诚实之处：这就不是"附近"了，是"合得来"。UI 文案相应不提距离。
+    """
+    me = store.get_profile(observer_id)
+    if me is None:
+        return []
+    out: list[Candidate] = []
+    for other_id in {u for u in store.ephemeral_map.values()}:
+        if other_id == observer_id:
+            continue
+        other = store.get_profile(other_id)
+        if other is None or hard_gates(me, other):
+            continue
+        bd = score_breakdown(me, other)
+        cs = round(sum(bd.values()))
+        if cs < config.MATCH_SCORE_THRESHOLD:
+            continue
+        pref = preference.preference_bonus(observer_id, other.interest_tags)
+        out.append(Candidate(
+            user_id=other_id, compat_score=cs, rank_score=cs + pref,
+            dwell_seconds=0.0, proximity_band="unknown",
+            breakdown={**bd, "pref_bonus": pref},
+        ))
+    out.sort(key=lambda c: (-c.rank_score, c.user_id))
+    return out[:max(1, limit)]
+
+
 def collect_candidates(observer_id: str) -> tuple[list[Candidate], dict[str, str]]:
     """扫描 observer 视角下所有在场对象，返回 (合格候选按分降序, 淘汰原因表)。"""
     me = store.get_profile(observer_id)

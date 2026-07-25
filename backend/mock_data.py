@@ -13,7 +13,11 @@ from .store import store
 EV = config.DEFAULT_EVENT_ID
 
 
-def _u(uid, nick, goal, tags_, style="deep_small_group", bundle=None, mode=Mode.OFF):
+# 预置人群默认「绿·同好」而不是蓝：他们代表"已经在场的人"。
+# 蓝色会被 hard_gates 的 blue_mode 直接挡掉，真实用户就一个也推荐不到，
+# 第一个扫码进来的人只会看到空列表。
+# u_demo_red 例外，保持红色——它就是用来验证红绿互不匹配的对照组（T01）。
+def _u(uid, nick, goal, tags_, style="deep_small_group", bundle=None, mode=Mode.FRIEND):
     return UserEventProfile(
         user_id=uid, event_id=EV, mode=mode, social_goal=goal,
         interest_tags=tags_, communication_style=style,
@@ -32,7 +36,7 @@ DEMO_USERS = {
                    bundle={"wechat": "whale_demo_b", "team_need": "找硬件方向队友"}),
     # ---- 模式不兼容对照 ----
     "u_demo_red": _u("u_demo_red", "晚风", "romance",
-                     ["摄影", "徒步"], style="one_on_one"),
+                     ["摄影", "徒步"], style="one_on_one", mode=Mode.LOVE),
 
     # ---- 舞池人群 ----
     "d01": _u("d01", "跳电", "hobby_friend", ["电子音乐", "蹦迪", "摄影"],

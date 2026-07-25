@@ -81,6 +81,12 @@
     </div>
 
     <form id="form" autocomplete="on">
+      <div id="name-row" hidden>
+        <label for="username">用户名</label>
+        <input id="username" type="text" autocomplete="nickname" maxlength="12"
+               placeholder="别人会看到这个名字">
+      </div>
+
       <label for="email">邮箱</label>
       <input id="email" type="email" inputmode="email" autocomplete="email"
              placeholder="you@gmail.com" required>
@@ -124,6 +130,7 @@
       $('tab-signup').classList.toggle('active', next === 'signup');
       $('submit').textContent = next === 'signin' ? '登录' : '注册';
       $('password').autocomplete = next === 'signin' ? 'current-password' : 'new-password';
+      $('name-row').hidden = next !== 'signup';
       msgEl.className = 'msg';
     }
     $('tab-signin').onclick = () => setMode('signin');
@@ -191,7 +198,13 @@
       say(mode === 'signin' ? '登录中…' : '注册中…', 'info');
       try {
         if (mode === 'signup') {
-          const d = await callAuth('signup', { email, password });
+          const username = $('username').value.trim();
+          // 存进 user_metadata，随 JWT 下发给后端；profiles 表本来就有
+          // nickname 列，所以不用改数据库。
+          const d = await callAuth('signup', {
+            email, password,
+            data: username ? { display_name: username } : undefined,
+          });
           if (saveSession(d)) {
             say('注册成功，正在进入…', 'ok');
             return location.replace('./');

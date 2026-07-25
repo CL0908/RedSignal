@@ -141,6 +141,17 @@ class Auth:
     def email_from_token(self, token: str) -> str:
         return str(self.verify(token).get("email", ""))
 
+    def display_name_from_token(self, token: str) -> str:
+        """注册时填的用户名。存在 Supabase 的 user_metadata 里，随 JWT 一起下发，
+        所以不需要为它加数据库列——profiles 表本来就有 nickname。"""
+        claims = self.verify(token)
+        meta = claims.get("user_metadata") or {}
+        for key in ("display_name", "name", "nickname", "username"):
+            v = meta.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()[:24]
+        return ""
+
     # ------------------------------------------------------------------
     def resolve(self, token: str, claimed_user_id: str = "") -> str:
         """把「前端声称的身份」换成「可信的身份」。
