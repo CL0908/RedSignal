@@ -25,3 +25,7 @@ tools/probe_log.txt
 
 # OS
 .DS_Store
+
+# 转写测试用的音频素材，不入库
+*.wav
+send_wav.py
