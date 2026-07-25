@@ -1440,14 +1440,23 @@
       .card + .card { margin-top: 12px; }
     }
 
+    /* 小屏（SE 一类，667px）：920 那档之后仍要滚 156px。
+       用户明确要求「尽量塞一面」，所以这里再压一轮。 */
     @media (max-height: 760px) {
       .status-bar { height: 20px; }
       .header { padding-top: 9px; padding-bottom: 12px; }
-      .mascot-wrap { padding-top: 4px; }
-      .mascot { width: 158px; height: 158px; }
-      .hero-title { margin-bottom: 15px; }
-      .mode-card { min-height: 78px; padding-top: 11px; }
-      .card { padding-top: 16px; padding-bottom: 17px; }
+      .mascot-wrap { padding: 2px 0 4px; }
+      .mascot { width: 116px; height: 116px; }
+      .hero-title { margin-bottom: 10px; }
+      .hero-title h1 { font-size: 21px; }
+      .hero-title p { font-size: 12px; }
+      .mode-card { min-height: 62px; padding: 9px 5px; }
+      .mode-cards { gap: 7px; }
+      .card { padding-top: 11px; padding-bottom: 11px; }
+      .card + .card { margin-top: 9px; }
+      .card-label { margin-bottom: 8px; }
+      /* 底部 126px 是给悬浮导航留的，小屏上导航本身也矮，收到 96 足够 */
+      .page { padding-bottom: 96px; }
       .nearby-mascot { margin-bottom: 12px; transform: scale(0.86); }
       .nearby-empty h2 { font-size: 25px; }
     }

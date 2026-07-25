@@ -9,6 +9,7 @@ WebSocket:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 import uuid
@@ -347,6 +348,25 @@ async def _generate_agent_content(encounter_id: str) -> None:
         await broadcast_state(uid)
 
 
+# 匿名昵称词库。风格对齐 mock_data 里的「信号狐 / 夜航鲸 / 折射 / 缓存」。
+_NICK_A = ["夜航", "信号", "低频", "回声", "折射", "南极", "热带", "跳电", "缓存",
+           "浮标", "北纬", "潮汐", "候鸟", "石英", "银盐", "长波", "微光", "晚风"]
+_NICK_B = ["鲸", "狐", "鹿", "鸦", "鲤", "隼", "獭", "雀", "豹", "鹤", "蜂", "鲨"]
+
+
+def generate_nickname(user_id: str) -> str:
+    """给新用户一个匿名昵称。
+
+    绝不能拿邮箱前缀当昵称——社交卡是要给陌生人看的，
+    zhangsan@gmail.com 会直接变成「zhangsan」，等于把邮箱的一半交出去。
+    这跟 models.FORBIDDEN_FIELDS 想防的是同一件事。
+
+    用 user_id 做种子，同一个人每次重建档案都得到同一个名字，不会跳来跳去。
+    """
+    h = int(hashlib.sha256(user_id.encode()).hexdigest()[:8], 16)
+    return _NICK_A[h % len(_NICK_A)] + _NICK_B[(h // len(_NICK_A)) % len(_NICK_B)]
+
+
 def ensure_profile(user_id: str, token: str = "") -> None:
     """首次登录的真实用户还没有档案，这里补一个空壳。
 
@@ -358,13 +378,7 @@ def ensure_profile(user_id: str, token: str = "") -> None:
         return
     from . import config as cfg
     from .models import UserEventProfile
-    email = ""
-    if token:
-        try:
-            email = auth_mod.auth.email_from_token(token)
-        except auth_mod.AuthError:
-            pass
-    nickname = (email.split("@")[0] if email else user_id[:8]) or "新用户"
+    nickname = generate_nickname(user_id)
     store.upsert_profile(UserEventProfile(
         user_id=user_id, event_id=cfg.DEFAULT_EVENT_ID, mode=Mode.OFF,
         social_goal="project_teammate", interest_tags=[],

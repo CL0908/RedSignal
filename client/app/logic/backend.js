@@ -121,6 +121,24 @@
     }).catch(() => null);
   }
 
+  // ------------------------------------------------------ 断线重连提示
+  function showReconnect(on) {
+    let el = document.getElementById('rs-reconnect');
+    if (!el) {
+      if (!on) return;
+      el = document.createElement('div');
+      el.id = 'rs-reconnect';
+      el.style.cssText = [
+        'position:absolute', 'top:0', 'left:0', 'right:0', 'z-index:60',
+        'background:#2b2621', 'color:#f6f1e7', 'text-align:center',
+        'padding:7px 12px', 'font-size:12px', 'letter-spacing:.02em',
+      ].join(';');
+      el.textContent = '连接断开，正在重连…';
+      document.getElementById('app')?.appendChild(el);
+    }
+    el.style.display = on ? 'block' : 'none';
+  }
+
   // ------------------------------------------------------- 顶栏连接状态
   function setRingStatus(text, ok) {
     const el = document.querySelector('.ring-status');
@@ -246,6 +264,7 @@
 
     RS.ws.onopen = () => {
       RS.online = true;
+      showReconnect(false);
       // 页面上当前选中的模式即时同步给后端
       const sel = document.querySelector('.mode-card.selected')?.dataset.mode;
       if (sel) send({ action: 'set_mode', mode: MODE_TO_API[sel] });
@@ -259,6 +278,9 @@
         return;
       }
       setRingStatus('', false);
+      // 服务重启会一次性踢掉所有连接（实测遇到过 1012 service restart）。
+      // 原来是静默重连，用户只会觉得"点了没反应"，得给个可见提示。
+      showReconnect(true);
       setTimeout(connect, 2000);
     };
 
@@ -675,15 +697,37 @@
     RS.demoMatchTimer = null;
   }
 
+  /* 每轮只上报一小撮，而不是全场每个人各来一条。
+
+     原来是「每 2 秒 × 每个在场的人各一条」——N 个人在线时服务器每秒要收
+     N×(N-1)/2 条，而每条还会触发一次全量候选计算。50 人就 1200 条/秒，
+     100 人约 5000 条/秒，免费额度的实例必挂。
+
+     采样必须是**稳定**的：presence.py 要求同一个 ephemeral 连续出现 3 次
+     才算数（PRESENCE_MIN_SIGHTINGS），每轮随机换一批就永远攒不够，
+     谁也匹配不上。所以固定一批扫若干轮，再整体轮换。 */
+  const SCAN_BATCH = 6;          // 每轮上报几个
+  const ROUNDS_PER_BATCH = 5;    // 同一批扫几轮再换（要 > 3 才攒得够持续性）
+
+  function pickBatch() {
+    const pool = RS.ephemerals.filter(e => e.user_id !== USER);
+    // 洗牌后取前 N；人少时就是全部
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    RS.scanBatch = pool.slice(0, SCAN_BATCH);
+    RS.scanRound = 0;
+  }
+
   function tick() {
-    // presence.py 需要"持续性"证据：每轮把在场的匿名 ID 各上报一次
-    RS.ephemerals
-      .filter(e => e.user_id !== USER)
-      .forEach(e => send({
-        action: 'sighting',
-        ephemeral_id: e.ephemeral_id,
-        rssi: -58 - Math.floor(Math.random() * 8),
-      }));
+    if (!RS.scanBatch || RS.scanRound >= ROUNDS_PER_BATCH) pickBatch();
+    RS.scanRound++;
+    RS.scanBatch.forEach(e => send({
+      action: 'sighting',
+      ephemeral_id: e.ephemeral_id,
+      rssi: -58 - Math.floor(Math.random() * 8),
+    }));
   }
 
   /* 外部用户版：手机上没有 Web Bluetooth，戒指连不了；手环也没接。
