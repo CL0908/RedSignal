@@ -72,6 +72,28 @@ def test_time_sync_ack_roundtrip():
     assert struct.unpack(">I", frame.body)[0] == 1_700_000_000
 
 
+def test_audio_request_frames_match_apk_layout():
+    assert zp.build_audio_extract_start(0).hex() == (
+        "3f00040503000000060e10000000000000")
+    assert zp.build_audio_next(0, 0).hex() == (
+        "3f000405060000000c84f9000000000000000000000000")
+    assert zp.build_audio_extract_finish(0).hex() == (
+        "3f00040507000000060e10000000000000")
+
+
+def test_audio_response_parsers():
+    assert zp.parse_audio_list_body(bytes.fromhex("00000000003f")) == {
+        "errorCode": 0, "fileCount": 63}
+    metadata = zp.parse_audio_metadata_body(bytes.fromhex("0000000000000000000100001000"))
+    assert metadata["errorCode"] == 0
+    assert metadata["fileIndex"] == 0
+    assert metadata["dataSize"] == 4096
+    body = bytes.fromhex("000000000000000000000000000001") + b"abc"
+    data = zp.parse_audio_data_body(body)
+    assert data["offset"] == 0 and data["isEnd"] is True
+    assert data["data"] == b"abc"
+
+
 def test_imu_body_parse():
     # 真机布局：err(u16) seqStart(u32) frameCount(u16) frameSize(u16) 然后 16B/帧
     body = struct.pack(">HIHH", 0, 4004, 2, 16)

@@ -1466,6 +1466,19 @@
     @supports not (height: 100dvh) {
       #app { height: 100vh; }
     }
+
+    /* 触摸设备使用原生滚动；iOS 对嵌套 touch-action + 100dvh 的组合处理
+       不稳定，桌面端滚轮正常但手机手指无法拖动。 */
+    @media (hover: none) and (pointer: coarse) {
+      #app { height: 100svh; max-height: none; }
+      .pages { touch-action: auto; }
+      .page {
+        overflow-y: scroll;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: auto;
+        touch-action: auto;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1482,7 +1495,7 @@
       <div class="logo" id="app-logo" data-mode="red">
         <span class="logo-mode-word" id="logo-mode-word">RED</span><span class="logo-signal-word">SIGNAL</span>
       </div>
-      <div class="ring-status"><div class="ring-dot"></div>戒指已连接</div>
+      <div class="ring-status"><div class="ring-dot"></div></div>
     </header>
 
     <main class="pages">
@@ -1579,8 +1592,9 @@
             <div class="radar-dot" style="top:120px;left:50px;animation-delay:0.8s"></div>
           </div>
           <div class="radar-status">
-            <strong>正在匿名发现</strong>
-            已广播匿名编号 <span id="anon-code">#8A2F</span>
+            <strong id="radar-title">正在匿名发现</strong>
+            <span id="radar-sub">正在感应附近的戒指…</span>
+            <span id="anon-code" hidden></span>
           </div>
           <button class="btn-primary" style="margin-top:40px;background:var(--red)" onclick="stopDiscovery()">停止发现</button>
         </div>
@@ -2693,8 +2707,8 @@
     playSayHiOnce();
   </script>
   <!-- 后端接线层：订阅实时匹配、确认与设备状态；后端不可达时保持离线演示。 -->
-  <script src="logic/backend.js"></script>
+  <script src="logic/backend.js?v=20260726-demo11"></script>
   <!-- 戒指 Web Bluetooth 直连。必须在 backend.js 之后：要读 window.RS 的身份与 token。 -->
-  <script src="logic/ring.js"></script>
+  <script src="logic/ring.js?v=20260726-demo11"></script>
 </body>
 </html>

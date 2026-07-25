@@ -23,12 +23,14 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agent, auth as auth_mod, chat, confirm, gadgetbridge, mock_data, presence, zilo_protocol
+from . import (agent, auth as auth_mod, chat, confirm, gadgetbridge, matching,
+               mock_data, presence, transcription, zilo_protocol)
+from .ring_audio import RingAudioSession
 from .models import (
     ButtonEventType, IMUBatch, Mode, RingButtonEvent, SessionState,
 )
 from .persistence import persistence
-from .state_machine import set_mode
+from .state_machine import set_mode, transition
 from .store import store
 from .wearable_hub import wearable_hub
 
@@ -83,6 +85,55 @@ class Hub:
 
 hub = Hub()
 
+# 演示自动播放：3 秒后自动配对 + 自动替双方"双击确认"。
+# 现场网络差/人手不够时是救命的，但它会**掩盖真实链路的故障**——
+# 拿真戒指双击时，就算蓝牙那一跳压根没通，2 秒后它也会自己确认成功，
+# 于是你以为戒指通了，其实完全没有。验真硬件时必须设 0。
+DEMO_AUTOPLAY = auth_mod._load_env().get(
+    "REDSIGNAL_DEMO_AUTOPLAY", "1") not in ("0", "false", "False")
+if DEMO_AUTOPLAY:
+    log.warning("演示自动播放已开启：会自动配对并替双方完成确认。"
+                "验证真实戒指前请设 REDSIGNAL_DEMO_AUTOPLAY=0，否则测不出真假。")
+else:
+    log.info("演示自动播放已关闭：匹配与确认全部走真实链路")
+
+_ring_audio_sessions: dict[str, RingAudioSession] = {}
+_device_rx_buffers: dict[str, bytearray] = {}
+_demo_auto_confirm_tasks: dict[str, asyncio.Task] = {}
+
+
+def _feed_device_frames(user_id: str, chunk: bytes) -> list[zilo_protocol.ZiloFrame]:
+    """把 Web Bluetooth 的任意分片重新组装成协议帧。"""
+    buf = _device_rx_buffers.setdefault(user_id, bytearray())
+    buf.extend(chunk)
+    result: list[zilo_protocol.ZiloFrame] = []
+    while True:
+        if len(buf) < zilo_protocol.HEADER_LEN:
+            break
+        if buf[0] != zilo_protocol.FRAME_MAGIC:
+            try:
+                del buf[:buf.index(zilo_protocol.FRAME_MAGIC)]
+            except ValueError:
+                buf.clear()
+                break
+        if len(buf) < zilo_protocol.HEADER_LEN:
+            break
+        body_len = int.from_bytes(buf[5:9], "big")
+        total = zilo_protocol.HEADER_LEN + body_len
+        if body_len > 2 * 1024 * 1024:
+            del buf[0]
+            continue
+        if len(buf) < total:
+            break
+        raw = bytes(buf[:total])
+        del buf[:total]
+        try:
+            result.append(zilo_protocol.parse_frame(raw))
+        except zilo_protocol.FrameError:
+            # 丢掉一个字节后继续寻找下一个 magic，避免坏帧卡死整个连接。
+            continue
+    return result
+
 
 @app.on_event("shutdown")
 async def _flush_persistence() -> None:
@@ -117,19 +168,85 @@ async def do_sighting(observer: str, ephemeral_id: str, rssi: int) -> None:
     log.info("sighting %s->%s rssi=%s => %s", observer, ephemeral_id, rssi, reason)
     await hub.push(observer, {"type": "sighting_ack", "reason": reason})
     if pair is not None:
-        notice = {
-            "type": "match_notice",
-            "pair_id": pair.pair_id,
-            "text": "附近有一位与你互相适配的同好。双击戒指按钮，表示愿意认识。",
-            "match_score": pair.match_score,
-            "proximity_band": pair.proximity_band,
-        }
-        await hub.push(pair.user_a, notice)
-        await hub.push(pair.user_b, notice)
-        await broadcast_state(pair.user_a)
-        await broadcast_state(pair.user_b)
-        # 懒惰窗口过期检查
-        asyncio.create_task(_expire_watch(pair.pair_id))
+        await publish_match(pair)
+
+
+async def publish_match(pair) -> None:
+    notice = {
+        "type": "match_notice",
+        "pair_id": pair.pair_id,
+        "text": "附近有一位与你互相适配的同好。按下戒指，表示愿意认识。",
+        "match_score": pair.match_score,
+        "proximity_band": pair.proximity_band,
+    }
+    await hub.push(pair.user_a, notice)
+    await hub.push(pair.user_b, notice)
+    await broadcast_state(pair.user_a)
+    await broadcast_state(pair.user_b)
+    asyncio.create_task(_expire_watch(pair.pair_id))
+
+
+async def _demo_auto_confirm(pair) -> None:
+    """Demo-only: simulate both double presses, then pause before connecting."""
+    # Leave a visible beat after the match card before the confirmation state.
+    await asyncio.sleep(2)
+    if store.active_pair_for(pair.user_a) is not pair:
+        return
+    await do_button_confirm(pair.user_a, "demo_auto", "demo", demo_pause=False)
+    if store.active_pair_for(pair.user_b) is not pair:
+        return
+    transition(pair.user_b, SessionState.SELF_CONFIRMED)
+    await hub.push(pair.user_b, {
+        "type": "self_confirmed",
+        "text": "已确认，正在建立连接…",
+    })
+    await broadcast_state(pair.user_b)
+    await asyncio.sleep(2)
+    if store.active_pair_for(pair.user_b) is pair:
+        await do_button_confirm(pair.user_b, "demo_auto", "demo", demo_pause=False)
+
+
+def schedule_demo_auto_confirm(pair) -> None:
+    if not DEMO_AUTOPLAY:
+        return                    # 关掉自动播放时，确认只能来自真戒指或 App 按钮
+    task = _demo_auto_confirm_tasks.get(pair.pair_id)
+    if task is None or task.done():
+        _demo_auto_confirm_tasks[pair.pair_id] = asyncio.create_task(
+            _demo_auto_confirm(pair)
+        )
+
+
+async def do_demo_match(user_id: str) -> None:
+    """现场演示快捷入口：仍走 presence/matching/通知全链路。"""
+    if not DEMO_AUTOPLAY:
+        log.info("demo_match 被忽略（REDSIGNAL_DEMO_AUTOPLAY=0）")
+        return
+    other = "u_demo_b" if user_id == "u_demo_a" else "u_demo_a"
+    if store.get_profile(other) is None:
+        return
+    await do_set_mode(user_id, Mode.FRIEND)
+    await do_set_mode(other, Mode.FRIEND)
+    # demo 仍使用正式 pair/通知链路，但不让现场预置资料的 60 分阈值挡住演示。
+    existing = store.active_pair_for(user_id)
+    if existing is not None:
+        await publish_match(existing)
+        schedule_demo_auto_confirm(existing)
+        return
+    me = store.get_profile(user_id)
+    them = store.get_profile(other)
+    score = matching.compat_score(me, them)
+    candidate = matching.Candidate(
+        user_id=other, compat_score=max(score, 80), rank_score=max(score, 80),
+        dwell_seconds=2.0, proximity_band="very_near",
+        breakdown=matching.score_breakdown(me, them),
+    )
+    pair = matching.create_pair(user_id, candidate)
+    for uid in (pair.user_a, pair.user_b):
+        if store.get_state(uid) == SessionState.DISCOVERABLE:
+            transition(uid, SessionState.CANDIDATE_NEARBY)
+        transition(uid, SessionState.NOTIFIED)
+    await publish_match(pair)
+    schedule_demo_auto_confirm(pair)
 
 
 async def _expire_watch(pair_id: str) -> None:
@@ -144,7 +261,9 @@ async def _expire_watch(pair_id: str) -> None:
                 await broadcast_state(uid)
 
 
-async def do_button_confirm(user_id: str, method: str, device_id: str) -> None:
+async def do_button_confirm(
+    user_id: str, method: str, device_id: str, *, demo_pause: bool = True
+) -> None:
     pair = store.active_pair_for(user_id)
     if pair is None:
         await hub.push(user_id, {"type": "no_connection", "text": "未建立连接。"})
@@ -154,6 +273,10 @@ async def do_button_confirm(user_id: str, method: str, device_id: str) -> None:
         await hub.push(user_id, {"type": "no_connection", "text": "未建立连接。"})
         await broadcast_state(user_id)
         return
+    # Demo hardware flow intentionally leaves a two-second confirmation pause
+    # after the physical double press, so the action is visible in the demo.
+    if demo_pause and user_id in {"u_demo_a", "u_demo_b"}:
+        await asyncio.sleep(2)
     ev = RingButtonEvent(
         user_id=user_id, pair_id=pair.pair_id,
         event_type=ButtonEventType.DOUBLE_PRESS_CONFIRM, device_id=device_id,
@@ -163,7 +286,7 @@ async def do_button_confirm(user_id: str, method: str, device_id: str) -> None:
 
     if result.status == "accepted":
         await hub.push(user_id, {"type": "self_confirmed",
-                                 "text": "已记录你的确认，等待对方…"})
+                                 "text": "已确认，正在建立连接…"})
         await broadcast_state(user_id)
     elif result.status == "encounter_created":
         enc = result.encounter
@@ -277,6 +400,7 @@ def auth_config():
         "supabase_url": env.get("SUPABASE_URL", ""),
         "anon_key": env.get("SUPABASE_ANON_KEY", ""),
         "demo_mode": auth_mod.auth.demo_mode,
+        "demo_autoplay": DEMO_AUTOPLAY,     # 前端据此决定要不要发 demo_match
         "configured": bool(env.get("SUPABASE_URL") and env.get("SUPABASE_ANON_KEY")),
     }
 
@@ -316,6 +440,8 @@ async def ws_user(ws: WebSocket, user_id: str, token: str = "") -> None:
                 await do_set_mode(user_id, msg["mode"])
             elif action == "sighting":
                 await do_sighting(user_id, msg["ephemeral_id"], int(msg.get("rssi", -60)))
+            elif action == "demo_match" and user_id in {"u_demo_a", "u_demo_b"}:
+                await do_demo_match(user_id)
             elif action == "mock_button":
                 await do_button_confirm(user_id, "dual_ring_button", "mock")
             elif action == "app_confirm":       # App 双确认兜底
@@ -354,53 +480,78 @@ async def ws_device(ws: WebSocket, user_id: str, token: str = "") -> None:
     await ws.accept()
     hub.device_ws[user_id] = ws
     wearable_hub.ring_connected(user_id)
+    async def send_ring_frame(raw: bytes) -> None:
+        await ws.send_json({"send_frame": raw.hex()})
+
+    async def notify_ring_audio(event: dict) -> None:
+        log.info("ring audio user=%s %s", user_id, event)
+        await hub.push(user_id, event)
+
+    async def transcribe_ring_audio(path: Path, metadata: dict) -> None:
+        text = await transcription.transcribe_file(path)
+        profile = store.get_profile(user_id)
+        if profile is None:
+            return
+        profile.share_bundle["team_need"] = text
+        store.upsert_profile(profile)
+        await hub.push(user_id, {"type": "ring_audio", "stage": "transcribed",
+                                 "fileIndex": metadata.get("fileIndex"), "text": text})
+
+    audio_session = RingAudioSession(user_id, send_ring_frame, notify_ring_audio,
+                                     transcribe_ring_audio)
+    _ring_audio_sessions[user_id] = audio_session
+    _device_rx_buffers[user_id] = bytearray()
     # 连接建立后：先问系统信息（电量/固件/型号），再开启六轴上报
-    await ws.send_json({"send_frame": zilo_protocol.build_frame(
-        zilo_protocol.CMD_SYS_INFO_REQ).hex()})
-    await ws.send_json({"send_frame": zilo_protocol.build_frame(
-        zilo_protocol.CMD_REPORT_START).hex()})
+    await send_ring_frame(zilo_protocol.build_frame(zilo_protocol.CMD_SYS_INFO_REQ))
+    await send_ring_frame(zilo_protocol.build_frame(zilo_protocol.CMD_REPORT_START))
+    # 建立录音数量基线；之后每次轮询发现 count 增长就自动提取新文件。
+    await audio_session.request_list()
+    async def poll_recordings() -> None:
+        while True:
+            await asyncio.sleep(5)
+            await audio_session.request_list()
+    poll_task = asyncio.create_task(poll_recordings())
     try:
         while True:
             msg = await ws.receive_json()
             raw_hex = msg.get("frame")
             if not raw_hex:
                 continue
-            try:
-                frame = zilo_protocol.parse_frame(zilo_protocol.hex_to_bytes(raw_hex))
-            except zilo_protocol.FrameError as e:
-                log.warning("bad frame from %s: %s", user_id, e)
-                continue
-            kind = zilo_protocol.classify(frame)
-            if kind == "double_press_confirm":
-                wearable_hub.ring_button_press(user_id)
-                await do_button_confirm(user_id, "dual_ring_button", f"zilo_{user_id}")
-            elif kind == "imu_batch":
-                parsed = zilo_protocol.parse_imu_body(frame.body)
-                if parsed:
-                    store.add_imu(IMUBatch(user_id, parsed.seq_start, parsed.seq_end,
-                                           parsed.uptime_ms, parsed.accel, parsed.gyro))
-                    wearable_hub.ring_imu(user_id, parsed.accel, parsed.gyro)
-            elif kind == "motion_gesture":
-                gesture_id = frame.body[4] if len(frame.body) >= 5 else 0
-                gesture_names = {0: "idle", 1: "rotate_back", 2: "rotate_front", 3: "wave"}
-                wearable_hub.ring_gesture(user_id, gesture_names.get(gesture_id, "unknown"))
-            elif kind == "sys_info":
-                # 0x0102 系统信息：解析电量/固件/型号 → 更新融合中心（前端仪表盘展示）
-                info = zilo_protocol.parse_sys_info(frame.body)
-                wearable_hub.ring_connected(
-                    user_id,
-                    firmware=info.get("firmwareVersion", ""),
-                    battery=info.get("batteryPercent", -1),
-                    model=info.get("model", "ring_sound"),
-                )
-            elif kind == "time_sync_req":
-                # 戒指开机后反复发 0x0401 求时间；回 0x0402 秒级校时，它才不再刷。
-                await ws.send_json({"send_frame":
-                    zilo_protocol.build_time_sync_ack(int(time.time())).hex()})
-            elif kind == "unknown":
-                log.warning("unknown cmd 0x%04x from %s", frame.cmd, user_id)
+            for frame in _feed_device_frames(user_id, zilo_protocol.hex_to_bytes(raw_hex)):
+                await audio_session.handle_frame(frame)
+                kind = zilo_protocol.classify(frame)
+                if kind == "double_press_confirm":
+                    wearable_hub.ring_button_press(user_id)
+                    await do_button_confirm(user_id, "dual_ring_button", f"zilo_{user_id}")
+                elif kind == "imu_batch":
+                    parsed = zilo_protocol.parse_imu_body(frame.body)
+                    if parsed:
+                        store.add_imu(IMUBatch(user_id, parsed.seq_start, parsed.seq_end,
+                                               parsed.uptime_ms, parsed.accel, parsed.gyro))
+                        wearable_hub.ring_imu(user_id, parsed.accel, parsed.gyro)
+                elif kind == "motion_gesture":
+                    gesture_id = frame.body[4] if len(frame.body) >= 5 else 0
+                    gesture_names = {0: "idle", 1: "rotate_back", 2: "rotate_front", 3: "wave"}
+                    wearable_hub.ring_gesture(user_id, gesture_names.get(gesture_id, "unknown"))
+                elif kind == "sys_info":
+                    # 0x0102 系统信息：解析电量/固件/型号 → 更新融合中心（前端仪表盘展示）
+                    info = zilo_protocol.parse_sys_info(frame.body)
+                    wearable_hub.ring_connected(
+                        user_id,
+                        firmware=info.get("firmwareVersion", ""),
+                        battery=info.get("batteryPercent", -1),
+                        model=info.get("model", "ring_sound"),
+                    )
+                elif kind == "time_sync_req":
+                    # 戒指开机后反复发 0x0401 求时间；回 0x0402 秒级校时，它才不再刷。
+                    await send_ring_frame(zilo_protocol.build_time_sync_ack(int(time.time())))
+                elif kind == "unknown":
+                    log.warning("unknown cmd 0x%04x from %s", frame.cmd, user_id)
     except WebSocketDisconnect:
+        poll_task.cancel()
         hub.device_ws.pop(user_id, None)
+        _ring_audio_sessions.pop(user_id, None)
+        _device_rx_buffers.pop(user_id, None)
         wearable_hub.ring_disconnected(user_id)
         await hub.push(user_id, {"type": "device_offline",
                                  "text": "戒指连接断开，可切换 App 确认模式。"})

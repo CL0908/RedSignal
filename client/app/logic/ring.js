@@ -46,11 +46,11 @@
       el.dataset.kind = kind || '';
     }
     const top = document.querySelector('.ring-status');
-    if (top && kind === 'ok') {
+    if (top && (kind === 'ok' || kind === 'err')) {
       const n = top.childNodes[top.childNodes.length - 1];
-      if (n) n.nodeValue = Ring.battery != null ? `戒指已连接 · ${Ring.battery}%` : '戒指已连接';
+      if (n) n.nodeValue = kind === 'ok' ? '戒指已连接' : '';
       const dot = top.querySelector('.ring-dot');
-      if (dot) dot.style.background = '';
+      if (dot) dot.style.background = kind === 'ok' ? '' : '#c8c2b6';
     }
     if (typeof window.toast === 'function' && kind === 'err') window.toast(text);
   }
@@ -81,8 +81,7 @@
 
   async function connect() {
     if (!Ring.supported) {
-      status('这个浏览器不支持 Web Bluetooth。iPhone 请用 Bluefy 或 WebBLE 打开；' +
-             '电脑用 Chrome/Edge，安卓用 Chrome。', 'err');
+      status('', '');
       return;
     }
     try {
@@ -169,9 +168,8 @@
 
     renderButton();
     if (!Ring.supported) {
-      document.getElementById('ring-connect-hint').textContent = '此浏览器不支持';
-      status('iPhone Safari 不支持 Web Bluetooth。用 Bluefy / WebBLE 打开，' +
-             '或在电脑 Chrome、安卓 Chrome 上连。', '');
+      document.getElementById('ring-connect-hint').textContent = '';
+      status('', '');
       const b = document.getElementById('ring-connect-btn');
       if (b) b.style.opacity = '.55';
     }

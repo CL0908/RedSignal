@@ -46,6 +46,20 @@ CMD_TOUCH_DOUBLE_TAP = 0x0701    # gesture recognition result
 CMD_MOTION_GESTURE = 0x0702      # sensor gesture result（带手势 ID）
 CMD_BUTTON_DOUBLE_PRESS = 0x0703  # key double press result —— P0 确认信号
 
+# ---- 录音相关（来自 APK 命令表，尚未真机验证；ring_audio_probe.py 用来实测）----
+# 注意 0x0503 是「开始**提取**」已有录音，不是「开始录音」。
+# 录音由戒指端某个物理动作触发，具体是什么动作文档没写，需要实测。
+CMD_AUDIO_LIST = 0x0501          # 录音列表
+CMD_AUDIO_LIST_RESP = 0x0502      # 录音列表响应
+CMD_AUDIO_EXTRACT_START = 0x0503  # 开始提取某条录音
+CMD_AUDIO_METADATA = 0x0504       # 录音元数据
+CMD_AUDIO_DATA = 0x0505           # 录音数据帧
+CMD_AUDIO_NEXT = 0x0506           # 请求下一段录音数据
+CMD_AUDIO_EXTRACT_FINISH = 0x0507 # 结束提取
+CMD_AUDIO_TRANSFER_DONE = 0x0508  # 传输完成
+CMD_AUDIO_QUICK_PLAY = 0x0509     # 快速播放
+CMD_AUDIO_CREATED = 0x050A        # 新录音完成通知
+
 GESTURE_NAMES = {0: "idle", 1: "rotate_back", 2: "rotate_front", 3: "wave"}
 
 
@@ -93,6 +107,67 @@ def build_frame(cmd: int, body: bytes = b"") -> bytes:
 def build_time_sync_ack(unix_seconds: int) -> bytes:
     """回应戒指 0x0401 校时请求：payload = uint32 大端 Unix 秒。不回它会一直重发。"""
     return build_frame(CMD_TIME_SYNC_ACK, struct.pack(">I", int(unix_seconds) & 0xFFFFFFFF))
+
+
+def build_audio_extract_start(file_index: int) -> bytes:
+    """请求提取已有录音：reserved:u16 + fileIndex:u32。"""
+    return build_frame(CMD_AUDIO_EXTRACT_START,
+                       struct.pack(">HI", 0, int(file_index) & 0xFFFFFFFF))
+
+
+def build_audio_next(file_index: int, offset: int) -> bytes:
+    """请求录音下一帧：reserved:u16 + fileIndex:u32 + offset:u32 + reserved:u16。"""
+    return build_frame(CMD_AUDIO_NEXT, struct.pack(">HIIH", 0,
+                                                    int(file_index) & 0xFFFFFFFF,
+                                                    int(offset) & 0xFFFFFFFF, 0))
+
+
+def build_audio_extract_finish(file_index: int) -> bytes:
+    """结束一条录音提取：reserved:u16 + fileIndex:u32。"""
+    return build_frame(CMD_AUDIO_EXTRACT_FINISH,
+                       struct.pack(">HI", 0, int(file_index) & 0xFFFFFFFF))
+
+
+def parse_audio_list_body(body: bytes) -> dict:
+    """0502：error:u16 + fileCount:u32。"""
+    error = struct.unpack(">H", body[:2])[0] if len(body) >= 2 else None
+    count = struct.unpack(">I", body[2:6])[0] if len(body) >= 6 else 0
+    return {"errorCode": error, "fileCount": count}
+
+
+def parse_audio_metadata_body(body: bytes) -> dict:
+    """0504：error:u16 + fileIndex:u32 + recordTime:u32 + dataSize:u32。"""
+    return {
+        "errorCode": struct.unpack(">H", body[:2])[0] if len(body) >= 2 else None,
+        "fileIndex": struct.unpack(">I", body[2:6])[0] if len(body) >= 6 else 0,
+        "recordTime": struct.unpack(">I", body[6:10])[0] if len(body) >= 10 else 0,
+        "dataSize": struct.unpack(">I", body[10:14])[0] if len(body) >= 14 else 0,
+    }
+
+
+def parse_audio_data_body(body: bytes) -> dict:
+    """0505：头部 15 字节后是数据；兼容 APK 的 frameSize/isEnd 字段。"""
+    result = {
+        "errorCode": struct.unpack(">H", body[:2])[0] if len(body) >= 2 else None,
+        "fileIndex": struct.unpack(">I", body[2:6])[0] if len(body) >= 6 else 0,
+        "offset": struct.unpack(">I", body[6:10])[0] if len(body) >= 10 else 0,
+        "frameSize": struct.unpack(">I", body[10:14])[0] if len(body) >= 14 else 0,
+        "isEnd": len(body) >= 15 and body[14] == 1,
+    }
+    raw = body[15:] if len(body) > 15 else b""
+    # APK 兼容三种固件封装：裸数据、头部 u16 长度、尾部 u16 长度。
+    data = raw
+    size = result["frameSize"]
+    if size and len(raw) >= size + 2:
+        trailer = raw[size:size + 2]
+        if int.from_bytes(trailer, "little") == size or int.from_bytes(trailer, "big") == size:
+            data = raw[:size]
+        elif int.from_bytes(raw[:2], "little") == size or int.from_bytes(raw[:2], "big") == size:
+            data = raw[2:2 + size]
+    if size and len(data) >= size:
+        data = data[:size]
+    result["data"] = bytes(data)
+    return result
 
 
 def hex_to_bytes(s: str) -> bytes:

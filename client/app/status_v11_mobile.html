@@ -834,13 +834,17 @@
             } catch { return false; }
         }
 
-        async function tick() {
-            if (!(await fromWatch())) randomize();
-        }
+        /* 为什么以随机为主、而不是以手表数据为主：
+           现在能拿到的手表数据是 /api/demo/{user}/mock 注进去的**常量**，
+           每次读都一样，生命体会僵在同一副样子，看起来像坏了。
+           所以每次进入随机一副新状态；真手表接上后（数值会自己变）
+           再把 fromWatch 提回主位即可。 */
+        randomize();
+        setInterval(randomize, 6000);   // 持续微变，保持"活着"的观感
 
-        randomize();          // 先给一组，别让页面停在默认值上
-        tick();
-        setInterval(tick, 6000);
+        // 父页面切到状态页时调它，让每次进入都是一副新状态。
+        // 同源 iframe，parent 可以直接 contentWindow.__rsRandomize()。
+        window.__rsRandomize = randomize;
     })();
 </script>
 </body>
