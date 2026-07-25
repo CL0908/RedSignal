@@ -1424,6 +1424,22 @@
         var(--text);
     }
 
+    /* 主流手机（iPhone 14/15 约 844-852px）：默认尺寸下信号页要滚 229px，
+       内容被挤到屏幕外。原有的收缩档位卡在 max-height:760px，这些机器够不着。
+       补一档中间尺寸——吉祥物 196→150 是最大的一笔，其余各让一点，
+       合计省下约 100px，标签卡就能露在首屏里。
+       比 760px 那档宽松，短屏仍由后面那档接管。 */
+    @media (max-height: 920px) {
+      .mascot-wrap { padding: 8px 0 6px; }
+      .mascot { width: 150px; height: 150px; }
+      .hero-title { margin-bottom: 16px; }
+      .hero-title h1 { font-size: 24px; }
+      .mode-cards { gap: 8px; }
+      .mode-card { min-height: 74px; padding: 11px 6px; }
+      .card { padding-top: 15px; padding-bottom: 15px; }
+      .card + .card { margin-top: 12px; }
+    }
+
     @media (max-height: 760px) {
       .status-bar { height: 20px; }
       .header { padding-top: 9px; padding-bottom: 12px; }
