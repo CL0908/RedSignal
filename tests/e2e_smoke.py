@@ -6,7 +6,8 @@ import sys
 
 import websockets
 
-BASE = "ws://127.0.0.1:8000"
+import os
+BASE = os.environ.get("RS_WS", "ws://127.0.0.1:8000")
 
 
 async def drain_until(ws, wanted_types: set[str], timeout=8):

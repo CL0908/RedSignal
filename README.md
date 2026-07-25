@@ -157,9 +157,13 @@ backend/
   agent.py           4 个 Claude Agent(带 fallback)
   photon.py          破冰官投递(→ photon-agent)
   main.py            FastAPI 入口 + WS + REST + 仪表盘路由
+  chat.py            Encounter 内聊天(路由键=encounter_id,参与者校验)
+  persistence.py     Supabase 写回层(write-behind,内存仍是唯一事实来源)
 client/
   dashboard.html     融合仪表盘:双设备数据+学习偏好+接近响铃+破冰官
-  index.html         手机版主流程 UI
+  index.html         手机版主流程 UI(戒指双确认弧,调试用)
+  app/               手机端正式 App:信号/附近/状态/消息 四页
+    logic/backend.js   接线层:包裹全局函数 + 订阅 /ws/user,后端不可达自动降级
 photon-agent/        Node · spectrum-ts 发 iMessage 微服务(Mock 模式零依赖)
 tools/               BLE 逆向工具集 + RING_FINDINGS.md
 tests/               50+ 测试(协议/匹配/偏好/手表读取,全绿)
@@ -173,3 +177,21 @@ tests/               50+ 测试(协议/匹配/偏好/手表读取,全绿)
 - 破冰官上真机：见 [`photon-agent/README.md`](photon-agent/README.md)（Photon Promo Code → 凭证 → `npm start`）。
 - 真戒指：戒指贴 Mac、`.venv/bin/python -u tools/ring_session.py 60`；或仪表盘「连接戒指」(Chrome/HTTPS)。
 - 真手表：Gadgetbridge 导出 → 仪表盘「上传手表数据」。
+
+### 手机端 App
+
+```bash
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+两台手机分别开 `http://<内网IP>:8000/app/?user=u_demo_a` 与 `?user=u_demo_b`：
+双方切绿 → 「开始匿名发现」→ 收到匹配提醒 → 各自确认 → 交换社交卡 + Agent 破冰 → 聊天。
+
+聊天走 `chat_send` WebSocket，路由键是 `encounter_id` 而非对方 user_id——
+前端始终不知道对方是谁，与 `share_bundle` 的隐私模型一致；
+会话只能挂在**已建立的 Encounter** 上，没有双向确认就没有聊天通道。
+关闭会话时调 `/api/chat/{user}/analyze` 评融洽度并更新偏好，
+`matching.py` 的 `preference_bonus` 由此获得数据（每个 encounter 只送一次，避免重复计入）。
+
+Supabase 写回是可选的：不配 `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`
+整层自动关闭，内存演示与测试完全不受影响（见 `.env.example`）。

@@ -13,15 +13,16 @@ import logging
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agent, confirm, gadgetbridge, mock_data, presence, zilo_protocol
+from . import agent, chat, confirm, gadgetbridge, mock_data, presence, zilo_protocol
 from .models import (
     ButtonEventType, IMUBatch, Mode, RingButtonEvent, SessionState,
 )
+from .persistence import persistence
 from .state_machine import set_mode
 from .store import store
 from .wearable_hub import wearable_hub
@@ -59,6 +60,12 @@ class Hub:
 
 
 hub = Hub()
+
+
+@app.on_event("shutdown")
+async def _flush_persistence() -> None:
+    """关服前把写回队列排空，避免最后几条 encounter 丢失。"""
+    await persistence.flush()
 
 
 async def broadcast_state(user_id: str) -> None:
@@ -153,6 +160,24 @@ async def do_button_confirm(user_id: str, method: str, device_id: str) -> None:
         await hub.push(user_id, {"type": "no_connection", "text": "未建立连接。"})
 
 
+async def do_chat_send(user_id: str, encounter_id: str, text: str) -> None:
+    """把一条消息投递给 encounter 的另一方。
+
+    发送方不回声——它已经乐观渲染过了；重连时用 /api/chat/.../history 对齐。
+    """
+    try:
+        msg = chat.chat_store.append(encounter_id, user_id, text)
+        partner = chat.chat_store.partner_of(encounter_id, user_id)
+    except chat.ChatError as e:
+        log.warning("chat_send rejected %s: %s", user_id, e)
+        await hub.push(user_id, {"type": "chat_error", "text": "消息发送失败。"})
+        return
+    await hub.push(user_id, {"type": "chat_sent",
+                             "encounter_id": encounter_id,
+                             "message_id": msg.message_id})
+    await hub.push(partner, chat.chat_store.as_payload(msg, partner))
+
+
 async def _generate_agent_content(encounter_id: str) -> None:
     enc = store.encounters.get(encounter_id)
     if enc is None:
@@ -166,6 +191,7 @@ async def _generate_agent_content(encounter_id: str) -> None:
                                   enc.confirmation_method)
     content = await asyncio.to_thread(agent.generate, payload)
     enc.agent_content = content
+    store.set_agent_content(encounter_id, content)
     for uid in (pair.user_a, pair.user_b):
         await hub.push(uid, {"type": "agent_content", **content})
         try:
@@ -194,8 +220,12 @@ async def ws_user(ws: WebSocket, user_id: str) -> None:
                 await do_button_confirm(user_id, "dual_ring_button", "mock")
             elif action == "app_confirm":       # App 双确认兜底
                 await do_button_confirm(user_id, "app_double_confirm", "app")
+            elif action == "chat_send":
+                await do_chat_send(user_id, msg.get("encounter_id", ""),
+                                   msg.get("text", ""))
             elif action == "clear_data":
                 store.clear_user(user_id)
+                chat.chat_store.clear_user(user_id)
                 mock_data.load()               # Demo 环境重新载入预置
                 await broadcast_state(user_id)
     except WebSocketDisconnect:
@@ -264,6 +294,16 @@ async def ws_device(ws: WebSocket, user_id: str) -> None:
 class ProfilePatch(BaseModel):
     interest_tags: list[str] | None = None
     social_goal: str | None = None
+    wish: str | None = None            # "今天想找" 自由文本，落在 share_bundle.team_need
+
+
+def _profile_dict(user_id: str, p) -> dict:
+    return {
+        "user_id": p.user_id, "nickname": p.nickname, "mode": p.mode.value,
+        "interest_tags": p.interest_tags, "social_goal": p.social_goal,
+        "wish": p.share_bundle.get("team_need", ""),
+        "state": store.get_state(user_id).value,
+    }
 
 
 @app.get("/api/profile/{user_id}")
@@ -271,11 +311,23 @@ def get_profile(user_id: str):
     p = store.get_profile(user_id)
     if p is None:
         return {"error": "not_found"}
-    return {
-        "user_id": p.user_id, "nickname": p.nickname, "mode": p.mode.value,
-        "interest_tags": p.interest_tags, "social_goal": p.social_goal,
-        "state": store.get_state(user_id).value,
-    }
+    return _profile_dict(user_id, p)
+
+
+@app.patch("/api/profile/{user_id}")
+def patch_profile(user_id: str, req: ProfilePatch):
+    """App 端编辑标签 / 社交目标 / "今天想找"。写内存 + 触发 Supabase 写回。"""
+    p = store.get_profile(user_id)
+    if p is None:
+        return {"error": "not_found"}
+    if req.interest_tags is not None:
+        p.interest_tags = req.interest_tags
+    if req.social_goal is not None:
+        p.social_goal = req.social_goal
+    if req.wish is not None:
+        p.share_bundle["team_need"] = req.wish
+    store.upsert_profile(p)            # 复用 upsert 的持久化路径
+    return _profile_dict(user_id, p)
 
 
 @app.get("/api/ephemerals")
@@ -410,27 +462,56 @@ def extract_profile_labels(user_id: str, req: LabelExtractRequest):
     return {"user_id": user_id, "labels": labels}
 
 
+@app.get("/api/chat/{user_id}/history/{encounter_id}")
+def chat_history(user_id: str, encounter_id: str):
+    """会话历史。重连/刷新后用它对齐，mine 由后端判定。"""
+    try:
+        chat.chat_store.partner_of(encounter_id, user_id)   # 参与者校验
+    except chat.ChatError:
+        return {"error": "forbidden", "messages": []}
+    return {"encounter_id": encounter_id,
+            "messages": [chat.chat_store.as_payload(m, user_id)
+                         for m in chat.chat_store.history(encounter_id)]}
+
+
 class ChatAnalyzeRequest(BaseModel):
-    partner_id: str
+    """两种用法：
+    - 传 encounter_id：后端自己取会话记录与对方标签（App 走这条）；
+    - 传 partner_id + messages：调用方自带数据（工具/测试走这条）。
+    """
+    encounter_id: str | None = None
+    partner_id: str | None = None
     # messages: [{"sender": str, "ts": epoch_seconds, "text": str}]
-    messages: list[dict]
+    messages: list[dict] | None = None
     partner_tags: list[str] | None = None
 
 
 @app.post("/api/chat/{user_id}/analyze")
 def analyze_chat(user_id: str, req: ChatAnalyzeRequest):
     """一次聊天结束 → 评融洽度 + 算 engagement + 更新 user_id 对这类人的偏好。"""
-    rapport = agent.analyze_rapport(req.messages)
-    metrics = compute_engagement(req.messages, rapport=rapport["rapport"])
+    partner_id, messages = req.partner_id, req.messages
+    if req.encounter_id:
+        try:
+            partner_id = chat.chat_store.partner_of(req.encounter_id, user_id)
+        except chat.ChatError:
+            return {"error": "forbidden"}
+        messages = chat.chat_store.analyze_payload(req.encounter_id)
+    if partner_id is None or messages is None:
+        return {"error": "need encounter_id or (partner_id + messages)"}
+    if not messages:
+        return {"error": "no_messages", "user_id": user_id, "partner_id": partner_id}
+
+    rapport = agent.analyze_rapport(messages)
+    metrics = compute_engagement(messages, rapport=rapport["rapport"])
     # 对方标签：优先用传入的，否则查档案
     ptags = req.partner_tags
     if ptags is None:
-        p = store.get_profile(req.partner_id)
+        p = store.get_profile(partner_id)
         ptags = p.interest_tags if p else []
     preference.update_from_chat(user_id, ptags, metrics.engagement)
     return {
         "user_id": user_id,
-        "partner_id": req.partner_id,
+        "partner_id": partner_id,
         "rapport": rapport,
         "metrics": metrics.to_dict(),
         "updated_preference_top": preference.top_tags(user_id),
@@ -540,4 +621,14 @@ def dashboard():
     return FileResponse(CLIENT_DIR / "dashboard.html")
 
 
+@app.get("/app")
+def mobile_app(request: Request):
+    """手机端主应用入口。重定向到带尾斜杠的挂载点，
+    否则 index.html 里的相对路径（logic/ Anims/ UIstatic/）会解析到站点根目录。"""
+    q = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(f"/app/{q}")
+
+
 app.mount("/logic", StaticFiles(directory=CLIENT_DIR / "logic"), name="logic")
+# /app/ 下的静态资源（Anims 视频、UIstatic 图、status 子页、backend.js）
+app.mount("/app", StaticFiles(directory=CLIENT_DIR / "app", html=True), name="app")

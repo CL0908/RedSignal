@@ -61,6 +61,7 @@ def handle_button_event(ev: RingButtonEvent,
     if last is not None and (ev.detected_at - last).total_seconds() < config.BUTTON_DEBOUNCE_SECONDS:
         return ConfirmResult("duplicate")
     _last_press[key] = ev.detected_at
+    store.record_button_event(ev)      # 通过防抖的才留档
 
     # 窗口：首个确认启动窗口
     deadline = _window_deadline.get(ev.pair_id)
@@ -96,7 +97,7 @@ def _create_encounter(pair_id: str, confirmed_by: list[str],
         shared_fields=shared,
     )
     store.add_encounter(encounter)
-    pair.cancelled = True  # 候选完成使命
+    store.cancel_pair(pair, "encounter_created")  # 候选完成使命
     for uid in confirmed_by:
         transition(uid, S.ENCOUNTER_CONFIRMED)
         transition(uid, S.CONNECTED)
@@ -120,7 +121,7 @@ def expire_pair(pair_id: str) -> None:
     """单方确认过期：回 DISCOVERABLE，UI 只显示"未建立连接"。"""
     pair = store.get_pair(pair_id)
     if pair:
-        pair.cancelled = True
+        store.cancel_pair(pair, "window_expired")
         for uid in (pair.user_a, pair.user_b):
             st = store.get_state(uid)
             if st in (S.NOTIFIED, S.SELF_CONFIRMED, S.CANDIDATE_NEARBY):

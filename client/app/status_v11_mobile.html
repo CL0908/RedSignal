@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>粒子生命体 - 手机适配版</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #030305; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        canvas { display: block; }
+        
+        .panel {
+            position: absolute; background: rgba(15, 15, 18, 0.7); padding: 20px;
+            border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5); backdrop-filter: blur(8px);
+            user-select: none; width: 280px; 
+        }
+
+        #panel-personality { top: 20px; left: 20px; width: 240px; }
+        #panel-vitals { top: 20px; right: 20px; }
+        #panel-misc { bottom: 20px; right: 20px; border-color: rgba(150, 100, 255, 0.3); }
+
+        h2 { margin: 0 0 15px 0; font-size: 14px; font-weight: 600; color: #fff; letter-spacing: 1px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;}
+        #panel-misc h2 { color: #b48cff; border-bottom-color: rgba(150, 100, 255, 0.2); }
+
+        .desc { font-size: 11px; color: #888; margin-bottom: 15px; margin-top: -10px; line-height: 1.4; }
+        
+        .control-group { margin-bottom: 18px; }
+        .control-group:last-child { margin-bottom: 0; }
+        .control-group label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px; color: #ccc;}
+        
+        .slider-row { display: flex; align-items: center; gap: 10px; }
+
+        .quality-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+        .quality-button {
+            appearance: none; border: 1px solid rgba(150, 100, 255, 0.28);
+            background: rgba(150, 100, 255, 0.07); color: #aaa; border-radius: 6px;
+            padding: 7px 4px; font: inherit; font-size: 11px; cursor: pointer; transition: 0.2s;
+        }
+        .quality-button:hover { background: rgba(150, 100, 255, 0.15); color: #ddd; }
+        .quality-button.active {
+            border-color: #b48cff; background: rgba(150, 100, 255, 0.22); color: #d7c3ff;
+            box-shadow: 0 0 10px rgba(150, 100, 255, 0.12);
+        }
+
+        input[type=range].state-slider { flex: 1; -webkit-appearance: none; background: rgba(255,255,255,0.15); height: 4px; border-radius: 2px; outline: none; transition: 0.3s; }
+        input[type=range].state-slider:hover { background: rgba(255,255,255,0.25); }
+        input[type=range].state-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; cursor: pointer; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
+        
+        input[type=range].misc-slider { background: rgba(150, 100, 255, 0.15); }
+        input[type=range].misc-slider:hover { background: rgba(150, 100, 255, 0.25); }
+        input[type=range].misc-slider::-webkit-slider-thumb { background: #b48cff; }
+
+        .bound-input {
+            width: 46px; height: 20px; background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 255, 150, 0.3); color: #00ff96; font-size: 11px; text-align: center;
+            border-radius: 4px; outline: none; transition: border 0.3s;
+        }
+        .bound-input:focus { border-color: #00ff96; }
+        
+        .misc-input { border-color: rgba(150, 100, 255, 0.3); color: #b48cff; }
+        .misc-input:focus { border-color: #b48cff; }
+
+        input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        .bound-color { width: 24px; height: 24px; border: none; padding: 0; background: none; cursor: pointer; border-radius: 4px; overflow: hidden; }
+        .bound-color::-webkit-color-swatch-wrapper { padding: 0; }
+        .bound-color::-webkit-color-swatch { border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; }
+
+
+        /* ===== 手机端布局 ===== */
+        #mobile-controls { display: contents; }
+        #mobile-sheet-header, #mobile-tabs, #mobile-toggle, #mobile-backdrop { display: none; }
+
+        @media (max-width: 768px), (pointer: coarse) {
+            :root { color-scheme: dark; }
+            html, body {
+                width: 100%; height: 100%;
+                overscroll-behavior: none;
+                -webkit-text-size-adjust: 100%;
+                touch-action: manipulation;
+            }
+            canvas {
+                width: 100vw; height: 100dvh;
+                touch-action: none;
+            }
+
+            #mobile-toggle {
+                display: inline-flex; align-items: center; justify-content: center;
+                position: fixed;
+                top: calc(12px + env(safe-area-inset-top));
+                right: calc(12px + env(safe-area-inset-right));
+                z-index: 31;
+                min-width: 66px; min-height: 44px;
+                padding: 0 16px;
+                border: 1px solid rgba(180, 140, 255, 0.46);
+                border-radius: 999px;
+                background: rgba(18, 17, 25, 0.76);
+                color: #e5d9ff;
+                font: inherit; font-size: 13px; font-weight: 600;
+                letter-spacing: 0.5px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.32);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                cursor: pointer;
+            }
+
+            #mobile-backdrop {
+                display: block;
+                position: fixed; inset: 0;
+                z-index: 19;
+                background: rgba(0,0,0,0.10);
+                opacity: 1;
+                transition: opacity 180ms ease;
+            }
+            #mobile-backdrop.hidden {
+                opacity: 0;
+                pointer-events: none;
+            }
+
+            #mobile-controls {
+                display: flex;
+                position: fixed;
+                left: 0; right: 0; bottom: 88px;
+                z-index: 30;
+                flex-direction: column;
+                max-height: min(62dvh, 590px);
+                padding-bottom: env(safe-area-inset-bottom);
+                overflow: hidden;
+                border: 1px solid rgba(255,255,255,0.10);
+                border-bottom: 0;
+                border-radius: 22px 22px 0 0;
+                background: rgba(12, 12, 16, 0.94);
+                box-shadow: 0 -16px 42px rgba(0,0,0,0.42);
+                backdrop-filter: blur(18px);
+                -webkit-backdrop-filter: blur(18px);
+                transform: translateY(0);
+                transition: transform 220ms cubic-bezier(.2,.8,.2,1);
+            }
+            #mobile-controls.mobile-collapsed {
+                transform: translateY(calc(100% + 110px));
+                pointer-events: none;
+            }
+
+            #mobile-sheet-header {
+                display: grid;
+                grid-template-columns: 1fr auto 1fr;
+                align-items: center;
+                min-height: 48px;
+                padding: 4px 14px 0;
+                border-bottom: 1px solid rgba(255,255,255,0.07);
+            }
+            .mobile-sheet-title {
+                grid-column: 2;
+                color: #f3efff;
+                font-size: 13px; font-weight: 650;
+                letter-spacing: 0.6px;
+            }
+            .mobile-drag-handle {
+                position: absolute;
+                top: 7px; left: 50%;
+                width: 38px; height: 4px;
+                transform: translateX(-50%);
+                border-radius: 999px;
+                background: rgba(255,255,255,0.20);
+            }
+            #mobile-close {
+                grid-column: 3;
+                justify-self: end;
+                min-width: 52px; min-height: 36px;
+                border: 0; border-radius: 10px;
+                background: transparent;
+                color: #b9adc9;
+                font: inherit; font-size: 12px;
+                cursor: pointer;
+            }
+
+            #mobile-tabs {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 6px;
+                padding: 10px 14px 8px;
+            }
+            .mobile-tab {
+                min-height: 40px;
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 11px;
+                background: rgba(255,255,255,0.035);
+                color: #91899b;
+                font: inherit; font-size: 12px;
+                cursor: pointer;
+            }
+            .mobile-tab.active {
+                border-color: rgba(180, 140, 255, 0.55);
+                background: rgba(150, 100, 255, 0.18);
+                color: #e2d6ff;
+            }
+
+            .panel {
+                position: static;
+                display: none;
+                flex: 1;
+                width: auto !important;
+                min-height: 0;
+                max-height: none;
+                margin: 0;
+                padding: 10px 18px calc(18px + env(safe-area-inset-bottom));
+                overflow-y: auto;
+                overscroll-behavior: contain;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+                box-shadow: none;
+                backdrop-filter: none;
+                -webkit-backdrop-filter: none;
+                touch-action: pan-y;
+            }
+            .panel.mobile-active { display: block; }
+
+            h2 { display: none; }
+            .desc {
+                margin: 0 0 14px;
+                font-size: 11px;
+                color: #77717f;
+            }
+            .control-group { margin-bottom: 16px; }
+            .control-group label {
+                margin-bottom: 9px;
+                font-size: 13px;
+            }
+            .slider-row { gap: 9px; }
+
+            input[type=range].state-slider {
+                min-width: 0;
+                height: 6px;
+                touch-action: none;
+            }
+            input[type=range].state-slider::-webkit-slider-thumb {
+                width: 22px; height: 22px;
+                box-shadow: 0 0 0 5px rgba(255,255,255,0.055), 0 2px 8px rgba(0,0,0,0.42);
+            }
+            input[type=range].state-slider::-moz-range-thumb {
+                width: 22px; height: 22px;
+                border: 0; border-radius: 50%;
+                background: #fff;
+            }
+
+            .bound-input {
+                flex: 0 0 58px;
+                width: 58px; height: 36px;
+                box-sizing: border-box;
+                font-size: 12px;
+                border-radius: 9px;
+            }
+            .bound-color {
+                flex: 0 0 38px;
+                width: 38px; height: 38px;
+                border-radius: 9px;
+            }
+            .bound-color::-webkit-color-swatch { border-radius: 8px; }
+
+            .quality-options { gap: 9px; }
+            .quality-button {
+                min-height: 48px;
+                padding: 6px 4px;
+                border-radius: 11px;
+                font-size: 12px;
+                line-height: 1.35;
+            }
+        }
+
+        @media (max-width: 900px) and (orientation: landscape) and (pointer: coarse) {
+            #mobile-controls {
+                top: 0; right: 0; bottom: 0; left: auto;
+                width: min(430px, 56vw);
+                max-height: none;
+                padding-top: env(safe-area-inset-top);
+                border: 0;
+                border-left: 1px solid rgba(255,255,255,0.10);
+                border-radius: 22px 0 0 22px;
+                transform: translateX(0);
+            }
+            #mobile-controls.mobile-collapsed {
+                transform: translateX(calc(100% + 18px));
+            }
+            #mobile-toggle {
+                top: calc(10px + env(safe-area-inset-top));
+            }
+            .panel {
+                padding-bottom: calc(14px + env(safe-area-inset-bottom));
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #mobile-controls, #mobile-backdrop { transition: none; }
+        }
+
+    </style>
+</head>
+<body>
+
+
+<button id="mobile-toggle" type="button" aria-controls="mobile-controls" aria-expanded="false">参数</button>
+<div id="mobile-backdrop" class="hidden" aria-hidden="true"></div>
+<section id="mobile-controls" class="mobile-collapsed" aria-label="生命体参数" aria-hidden="true">
+    <div id="mobile-sheet-header">
+        <div class="mobile-drag-handle" aria-hidden="true"></div>
+        <span class="mobile-sheet-title">生命参数</span>
+        <button id="mobile-close" type="button" aria-label="收起参数面板">收起</button>
+    </div>
+    <nav id="mobile-tabs" aria-label="参数分类">
+        <button type="button" class="mobile-tab active" data-target="panel-personality">基底</button>
+        <button type="button" class="mobile-tab" data-target="panel-vitals">感知</button>
+        <button type="button" class="mobile-tab" data-target="panel-misc">其他</button>
+    </nav>
+
+<div id="panel-personality" class="panel mobile-active">
+    <h2>1. 专属生命基底</h2>
+    <div class="desc">底层形态参数（内部固定边界）</div>
+    <div class="control-group">
+        <label><span>倾向 (内敛 ←→ 外向)</span> <span id="val-ext">39%</span></label>
+        <div class="slider-row">
+            <input type="range" class="state-slider" id="param-ext" min="0" max="100" value="39">
+        </div>
+    </div>
+    <div class="control-group">
+        <label><span>情绪 (伤心 ←→ 开心)</span> <span id="val-joy">64%</span></label>
+        <div class="slider-row">
+            <input type="range" class="state-slider" id="param-joy" min="0" max="100" value="64">
+        </div>
+    </div>
+</div>
+
+<div id="panel-vitals" class="panel">
+    <h2>2. 即时感知</h2>
+    <div class="desc">左侧下限，右侧上限，滑条调节插值。</div>
+    
+    <div class="control-group">
+        <label><span>心率 (旋转)</span> <span id="val-hr">16%</span></label>
+        <div class="slider-row">
+            <input type="number" id="min-hr" class="bound-input" value="0.001" step="0.001">
+            <input type="range" class="state-slider" id="param-hr" min="0" max="100" value="16">
+            <input type="number" id="max-hr" class="bound-input" value="0.006" step="0.01">
+        </div>
+    </div>
+    <div class="control-group">
+        <label><span>压力 (聚敛)</span> <span id="val-stress">60%</span></label>
+        <div class="slider-row">
+            <input type="number" id="min-stress" class="bound-input" value="1.5" step="0.1">
+            <input type="range" class="state-slider" id="param-stress" min="0" max="100" value="60">
+            <input type="number" id="max-stress" class="bound-input" value="0.3" step="0.1">
+        </div>
+    </div>
+    <div class="control-group">
+        <label><span>血氧 (触角力度)</span> <span id="val-oxy">23%</span></label>
+        <div class="slider-row">
+            <input type="number" id="min-oxy" class="bound-input" value="0" step="10">
+            <input type="range" class="state-slider" id="param-oxy" min="0" max="100" value="23">
+            <input type="number" id="max-oxy" class="bound-input" value="400" step="10">
+        </div>
+    </div>
+    <div class="control-group">
+        <label><span>体温 (色彩)</span> <span id="val-temp">0%</span></label>
+        <div class="slider-row">
+            <input type="color" id="min-temp" class="bound-color" value="#0a50ff">
+            <input type="range" class="state-slider" id="param-temp" min="0" max="100" value="0">
+            <input type="color" id="max-temp" class="bound-color" value="#ff3c14">
+        </div>
+    </div>
+</div>
+
+<div id="panel-misc" class="panel">
+    <h2>3. 未归类参数</h2>
+    <div class="desc">控制生命体内外律动及渲染法则。</div>
+
+    <div class="control-group">
+        <label><span>粒子档位</span> <span id="val-quality">中 · 1500</span></label>
+        <div class="quality-options" role="group" aria-label="粒子档位">
+            <button type="button" class="quality-button" data-count="800" data-label="低">低<br>800</button>
+            <button type="button" class="quality-button active" data-count="1500" data-label="中">中<br>1500</button>
+            <button type="button" class="quality-button" data-count="2500" data-label="高">高<br>2500</button>
+        </div>
+    </div>
+    
+    <div class="control-group">
+        <label><span>跳跃速度</span> <span id="val-jumpspeed">31%</span></label>
+        <div class="slider-row">
+            <input type="number" id="min-jumpspeed" class="bound-input misc-input" value="0" step="0.1">
+            <input type="range" class="state-slider misc-slider" id="param-jumpspeed" min="0" max="100" value="31">
+            <input type="number" id="max-jumpspeed" class="bound-input misc-input" value="50" step="0.5">
+        </div>
+    </div>
+    
+    <div class="control-group">
+        <label><span>突触频率 (触角速度)</span> <span id="val-synspeed">65%</span></label>
+        <div class="slider-row">
+            <input type="number" id="min-synspeed" class="bound-input misc-input" value="0.1" step="0.1">
+            <input type="range" class="state-slider misc-slider" id="param-synspeed" min="0" max="100" value="65">
+            <input type="number" id="max-synspeed" class="bound-input misc-input" value="0.5" step="0.5">
+        </div>
+    </div>
+    
+    <div class="control-group">
+        <label><span>触角随机性</span> <span id="val-tentrandom">100%</span></label>
+        <div class="slider-row">
+            <input type="range" class="state-slider misc-slider" id="param-tentrandom" min="0" max="100" value="100">
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label><span>中心饱和度</span> <span id="val-coresat">79%</span></label>
+        <div class="slider-row">
+            <input type="number" id="min-coresat" class="bound-input misc-input" value="0.0" step="0.1">
+            <input type="range" class="state-slider misc-slider" id="param-coresat" min="0" max="100" value="79">
+            <input type="number" id="max-coresat" class="bound-input misc-input" value="1.0" step="0.1">
+        </div>
+    </div>
+</div>
+
+</section>
+
+<canvas id="canvas"></canvas>
+
+<script>
+    const CORE_CONFIG = { maxDeform: 1.2, happyBounce: 6, sadJitter: 6, sadDroop: 0.5 };
+
+    const BOUNDS = {
+        hr: [0.001, 0.006],
+        stress: [1.5, 0.3],
+        oxy: [0, 400], 
+        temp: [[10, 80, 255], [255, 60, 20]],
+        jumpspeed: [0, 50],
+        synspeed: [0.1, 0.5], // 突触频率的下限与上限范围
+        coresat: [0.0, 1.0] 
+    };
+
+    const lerp = (min, max, t) => min + (max - min) * t;
+    const clamp = (val) => Math.min(255, Math.max(0, Math.round(val)));
+    const lerpColor = (c1, c2, t) => [ lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t) ];
+    const hexToRgb = (hex) => {
+        const bigint = parseInt(hex.slice(1), 16);
+        return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
+    };
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false }); 
+    let width, height, cx, cy;
+    let sceneScale = 1;
+
+    const isMobileLayout = () => window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
+
+    function resize() {
+        const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth);
+        const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
+        width = canvas.width = viewportWidth;
+        height = canvas.height = viewportHeight;
+
+        let availableWidth = width;
+        let availableHeight = height;
+        const controls = document.getElementById('mobile-controls');
+        const controlsOpen = isMobileLayout() && controls && !controls.classList.contains('mobile-collapsed');
+        const isLandscapePhone = isMobileLayout() && width > height;
+
+        if (controlsOpen) {
+            const rect = controls.getBoundingClientRect();
+            if (isLandscapePhone) {
+                availableWidth = Math.max(260, width - rect.width);
+            } else {
+                availableHeight = Math.max(260, height - rect.height);
+            }
+        }
+
+        cx = availableWidth / 2;
+        cy = availableHeight / 2;
+
+        if (isMobileLayout()) {
+            const limitingSize = Math.min(availableWidth, availableHeight);
+            sceneScale = Math.min(0.88, Math.max(0.52, limitingSize / 560));
+        } else {
+            sceneScale = 1;
+            cx = width / 2;
+            cy = height / 2;
+        }
+    }
+    window.addEventListener('resize', resize, { passive: true });
+    window.addEventListener('orientationchange', () => setTimeout(resize, 120), { passive: true });
+    window.visualViewport?.addEventListener('resize', resize, { passive: true });
+    resize();
+
+    const QUALITY_LEVELS = { low: 800, medium: 1500, high: 2500 };
+    const MAX_NUM = QUALITY_LEVELS.high;
+    let activeParticleCount = QUALITY_LEVELS.medium;
+
+    const angles = new Float32Array(MAX_NUM);
+    const baseRadii = new Float32Array(MAX_NUM);
+    const sizes = new Float32Array(MAX_NUM);
+    const phases = new Float32Array(MAX_NUM);
+
+    for (let i = 0; i < MAX_NUM; i++) {
+        angles[i] = Math.random() * Math.PI * 2;
+        baseRadii[i] = Math.random() * Math.random() * 220 + 30;
+        sizes[i] = Math.random() * 2.5 + 0.5;
+        phases[i] = Math.random() * Math.PI * 2;
+    }
+
+    // 触角仍然由“区域”共同运动，但每个区域拥有不同的位置、宽度、强度、
+    // 速度与缓慢漂移。随机值只在初始化时生成，避免每帧随机导致闪烁。
+    const NUM_TENTACLES = 6;
+    const FULL_TURN = Math.PI * 2;
+    const SECTOR_WIDTH = FULL_TURN / NUM_TENTACLES;
+    const wrapAngle = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+
+    const tentacleConfigs = Array.from({ length: NUM_TENTACLES }, (_, index) => ({
+        regularAngle: index * SECTOR_WIDTH,
+        angleOffset: (Math.random() - 0.5) * SECTOR_WIDTH * 0.58,
+        halfWidth: SECTOR_WIDTH * (0.26 + Math.random() * 0.22),
+        strength: 0.62 + Math.random() * 0.82,
+        speed: 0.72 + Math.random() * 0.62,
+        phase: Math.random() * FULL_TURN,
+        driftPhase: Math.random() * FULL_TURN,
+        driftSpeed: 0.055 + Math.random() * 0.12,
+        driftAmount: SECTOR_WIDTH * (0.08 + Math.random() * 0.18),
+        widthPhase: Math.random() * FULL_TURN,
+        widthSpeed: 0.10 + Math.random() * 0.16,
+        strengthPhase: Math.random() * FULL_TURN,
+        strengthSpeed: 0.08 + Math.random() * 0.15,
+        bendStrength: (0.11 + Math.random() * 0.17) * (Math.random() < 0.5 ? -1 : 1)
+    }));
+
+    // 这些数组被每帧复用，避免在 render 内反复创建对象。
+    const tentacleCenters = new Float32Array(NUM_TENTACLES);
+    const tentacleWidths = new Float32Array(NUM_TENTACLES);
+    const tentaclePulses = new Float32Array(NUM_TENTACLES);
+    const tentacleStrengths = new Float32Array(NUM_TENTACLES);
+    const tentacleBends = new Float32Array(NUM_TENTACLES);
+
+    const $ = id => document.getElementById(id);
+
+    const mobileControls = $('mobile-controls');
+    const mobileToggle = $('mobile-toggle');
+    const mobileClose = $('mobile-close');
+    const mobileBackdrop = $('mobile-backdrop');
+
+    function setMobileControlsOpen(open) {
+        if (!mobileControls) return;
+        mobileControls.classList.toggle('mobile-collapsed', !open);
+        mobileControls.setAttribute('aria-hidden', String(!open));
+        mobileToggle?.setAttribute('aria-expanded', String(open));
+        mobileBackdrop?.classList.toggle('hidden', !open);
+        requestAnimationFrame(resize);
+    }
+
+    function setMobileTab(targetId) {
+        document.querySelectorAll('.mobile-tab').forEach(tab => {
+            const active = tab.dataset.target === targetId;
+            tab.classList.toggle('active', active);
+            tab.setAttribute('aria-selected', String(active));
+        });
+        document.querySelectorAll('#mobile-controls > .panel').forEach(panel => {
+            panel.classList.toggle('mobile-active', panel.id === targetId);
+        });
+        requestAnimationFrame(resize);
+    }
+
+    mobileToggle?.addEventListener('click', () => setMobileControlsOpen(true));
+    mobileClose?.addEventListener('click', () => setMobileControlsOpen(false));
+    mobileBackdrop?.addEventListener('click', () => setMobileControlsOpen(false));
+    document.querySelectorAll('.mobile-tab').forEach(tab => {
+        tab.addEventListener('click', () => setMobileTab(tab.dataset.target));
+    });
+
+    const mobileMediaQuery = window.matchMedia('(max-width: 768px), (pointer: coarse)');
+    setMobileControlsOpen(!mobileMediaQuery.matches);
+    mobileMediaQuery.addEventListener?.('change', () => {
+        if (!mobileMediaQuery.matches) setMobileControlsOpen(true);
+        else setMobileControlsOpen(false);
+        resize();
+    });
+
+    document.querySelectorAll('.quality-button').forEach(button => {
+        button.addEventListener('click', () => {
+            activeParticleCount = Number(button.dataset.count);
+            document.querySelectorAll('.quality-button').forEach(item => {
+                item.classList.toggle('active', item === button);
+            });
+            $('val-quality').innerText = `${button.dataset.label} · ${activeParticleCount}`;
+        });
+    });
+    
+    const params = {};
+    // 将 synspeed 纳入初始化遍历
+    ['ext', 'joy', 'hr', 'stress', 'oxy', 'temp', 'jumpspeed', 'synspeed', 'tentrandom', 'coresat'].forEach(key => {
+        const el = $(`param-${key}`);
+        params[key] = parseFloat(el.value) / 100;
+        el.addEventListener('input', (e) => {
+            params[key] = parseFloat(e.target.value) / 100;
+            $(`val-${key}`).innerText = e.target.value + '%';
+        });
+    });
+
+    ['hr', 'stress', 'oxy', 'jumpspeed', 'synspeed', 'coresat'].forEach(key => {
+        $(`min-${key}`).addEventListener('input', (e) => BOUNDS[key][0] = parseFloat(e.target.value) || 0);
+        $(`max-${key}`).addEventListener('input', (e) => BOUNDS[key][1] = parseFloat(e.target.value) || 0);
+    });
+
+    $('min-temp').addEventListener('input', (e) => BOUNDS.temp[0] = hexToRgb(e.target.value));
+    $('max-temp').addEventListener('input', (e) => BOUNDS.temp[1] = hexToRgb(e.target.value));
+
+    let time = 0;
+    let jumpPhase = 0;
+    let lastFrameTime = performance.now();
+
+    function render(frameTime) {
+        const dt = Math.min((frameTime - lastFrameTime) / 1000, 0.033);
+        lastFrameTime = frameTime;
+        time += dt;
+
+        const rotationSpeed = lerp(BOUNDS.hr[0], BOUNDS.hr[1], params.hr);
+        const cohesion = lerp(BOUNDS.stress[0], BOUNDS.stress[1], params.stress);
+        const currentSpikeMax = lerp(BOUNDS.oxy[0], BOUNDS.oxy[1], params.oxy);
+        const deformStrength = lerp(0, CORE_CONFIG.maxDeform, params.ext);
+        
+        const sadness = 1 - params.joy;
+        const currentJitter = sadness * CORE_CONFIG.sadJitter;
+        const currentDroop = sadness * CORE_CONFIG.sadDroop;
+        const currentBounce = params.joy * CORE_CONFIG.happyBounce;
+
+        const currentJumpSpeed = lerp(BOUNDS.jumpspeed[0], BOUNDS.jumpspeed[1], params.jumpspeed);
+        jumpPhase += currentJumpSpeed * dt;
+
+        // 获取当前滑条控制的突触基础频率
+        const currentSynSpeed = lerp(BOUNDS.synspeed[0], BOUNDS.synspeed[1], params.synspeed);
+        
+        ctx.fillStyle = 'rgba(3, 3, 5, 0.2)';
+        ctx.fillRect(0, 0, width, height);
+
+        // 手机端只做一次整体缩放，避免逐粒子增加额外计算。
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(sceneScale, sceneScale);
+        ctx.translate(-cx, -cy);
+
+        const brightness = 0.5 + params.joy * 0.5;
+        const baseRGB = lerpColor(BOUNDS.temp[0], BOUNDS.temp[1], params.temp);
+        
+        const gray = baseRGB[0] * 0.299 + baseRGB[1] * 0.587 + baseRGB[2] * 0.114;
+        const currentCoreSat = lerp(BOUNDS.coresat[0], BOUNDS.coresat[1], params.coresat);
+        const coreFactor = 1.0 - currentCoreSat; 
+        
+        const centerRGB = [
+            clamp((baseRGB[0] * (1 - coreFactor) + gray * coreFactor) * brightness * 1.5),
+            clamp((baseRGB[1] * (1 - coreFactor) + gray * coreFactor) * brightness * 1.5),
+            clamp((baseRGB[2] * (1 - coreFactor) + gray * coreFactor) * brightness * 1.5)
+        ];
+
+        const edgeRGB = [ clamp(baseRGB[0] * brightness), clamp(baseRGB[1] * brightness), clamp(baseRGB[2] * brightness) ];
+        const maxVisualRadius = Math.max(150, 220 * cohesion + currentSpikeMax + deformStrength * 50);
+        
+        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxVisualRadius);
+        gradient.addColorStop(0, `rgba(${centerRGB[0]}, ${centerRGB[1]}, ${centerRGB[2]}, 0.9)`);
+        gradient.addColorStop(0.4, `rgba(${clamp((centerRGB[0]+edgeRGB[0])/2)}, ${clamp((centerRGB[1]+edgeRGB[1])/2)}, ${clamp((centerRGB[2]+edgeRGB[2])/2)}, 0.85)`);
+        gradient.addColorStop(1, `rgba(${edgeRGB[0]}, ${edgeRGB[1]}, ${edgeRGB[2]}, 0.7)`);
+
+        ctx.fillStyle = gradient;
+        ctx.globalCompositeOperation = 'lighter';
+        
+        ctx.beginPath();
+
+        // 六个触角仍是六片连续粒子区域，但不再平均分布、等宽或等强。
+        // “随机性”越高，各区域的位置、节奏、强度与宽度差异越明显。
+        const randomness = params.tentrandom;
+        const pulseRate = currentSynSpeed * FULL_TURN;
+        const globalTwist = Math.sin(time * 0.28) * 0.24;
+        const regularHalfWidth = SECTOR_WIDTH * 0.43;
+
+        for (let t = 0; t < NUM_TENTACLES; t++) {
+            const config = tentacleConfigs[t];
+            const speed = lerp(1, config.speed, randomness);
+            const phase = lerp(t * 1.37, config.phase, randomness);
+            const localTime = time * pulseRate * speed;
+
+            // 两个不同周期的波叠加，破除规则的机械往复，但仍保持整片区域同步。
+            const primaryWave = Math.sin(localTime + phase);
+            const secondaryWave = Math.sin(localTime * 0.47 + phase * 1.73 + 0.6);
+            let rawPulse = 0.5 + primaryWave * 0.38 + secondaryWave * 0.12 * randomness;
+            rawPulse = Math.max(0, Math.min(1, rawPulse));
+            tentaclePulses[t] = rawPulse * rawPulse * (3 - 2 * rawPulse);
+
+            const slowDrift =
+                Math.sin(time * config.driftSpeed + config.driftPhase) * config.driftAmount +
+                Math.sin(time * config.driftSpeed * 0.37 + config.driftPhase * 1.91) * config.driftAmount * 0.34;
+            tentacleCenters[t] = config.regularAngle + globalTwist +
+                (config.angleOffset + slowDrift) * randomness;
+
+            const widthBreath = 0.90 +
+                Math.sin(time * config.widthSpeed + config.widthPhase) * 0.16 * randomness;
+            tentacleWidths[t] = lerp(regularHalfWidth, config.halfWidth * widthBreath, randomness);
+
+            const strengthDrift = 0.82 +
+                (0.5 + 0.5 * Math.sin(time * config.strengthSpeed + config.strengthPhase)) * 0.36;
+            tentacleStrengths[t] = lerp(1, config.strength * strengthDrift, randomness);
+
+            const regularBend = Math.sin(localTime * 0.62 + phase + 0.8) * 0.18;
+            const organicBend = Math.sin(localTime * 0.55 + phase + 0.8) * config.bendStrength;
+            tentacleBends[t] = lerp(regularBend, organicBend, randomness);
+        }
+
+        for (let i = 0; i < activeParticleCount; i++) {
+            angles[i] += rotationSpeed * (150 / Math.max(baseRadii[i], 10));
+
+            const shapeMorph = 1 + deformStrength * (0.4 * Math.sin(angles[i] * 3) + 0.3 * Math.cos(angles[i] * 5));
+
+            const jitterX = (Math.random() - 0.5) * currentJitter;
+            const jitterY = (Math.random() - 0.5) * currentJitter;
+            const droop = baseRadii[i] * currentDroop * (1 + Math.sin(angles[i]));
+
+            const bounce = Math.sin(jumpPhase * 1.5 + phases[i]) * currentBounce;
+            let currentRadius = baseRadii[i] * shapeMorph * cohesion;
+
+            // ======== 有机随机的区域化触角 ========
+            const rNorm = Math.min(1.2, baseRadii[i] / 220);
+            const spiralAngle = angles[i] - rNorm * 1.28;
+            const rootFade = Math.max(0, Math.min(1, (rNorm - 0.10) / 0.90));
+            const lengthProfile = Math.pow(rootFade, 1.65);
+
+            let radialExtension = 0;
+            let angularBend = 0;
+
+            // 一个粒子可受到邻近区域的柔和影响，因此触角之间不会形成硬切分界。
+            for (let t = 0; t < NUM_TENTACLES; t++) {
+                const angleDelta = wrapAngle(spiralAngle - tentacleCenters[t]);
+                let regionWeight = Math.max(0, 1 - Math.abs(angleDelta) / tentacleWidths[t]);
+                if (regionWeight <= 0) continue;
+
+                regionWeight = regionWeight * regionWeight * (3 - 2 * regionWeight);
+
+                // 沿触角长度加入很轻的整体纹理变化，而不是让单颗粒子各自抽动。
+                const lengthVariation = 1 +
+                    Math.sin(rNorm * 7.2 + t * 1.83 + time * 0.22) * 0.10 * randomness;
+
+                radialExtension += regionWeight * tentaclePulses[t] *
+                    tentacleStrengths[t] * currentSpikeMax * lengthProfile * lengthVariation;
+                angularBend += regionWeight * tentacleBends[t] * lengthProfile;
+            }
+
+            // 限制重叠区域的总伸长，避免两条触角靠近时突然爆长。
+            currentRadius += Math.min(radialExtension, currentSpikeMax * 1.48);
+            const renderAngle = angles[i] + angularBend;
+            // ========================================
+
+            currentRadius += Math.sin(jumpPhase + phases[i]) * 4 + bounce;
+
+            const x = cx + Math.cos(renderAngle) * currentRadius + jitterX;
+            const y = cy + Math.sin(renderAngle) * currentRadius + jitterY + droop;
+
+            ctx.moveTo(x, y);
+            ctx.arc(x, y, sizes[i], 0, Math.PI * 2);
+        }
+        ctx.fill(); 
+
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.restore();
+        animationFrameId = requestAnimationFrame(render);
+    }
+
+    let animationFrameId = requestAnimationFrame(render);
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            cancelAnimationFrame(animationFrameId);
+        } else {
+            lastFrameTime = performance.now();
+            animationFrameId = requestAnimationFrame(render);
+        }
+    });
+</script>
+</body>
+</html>

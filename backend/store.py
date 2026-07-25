@@ -1,16 +1,28 @@
-"""内存存储层。黑客松够用；未来换 SQLite/Supabase 只改这一个文件。
-线程模型：FastAPI 单事件循环内访问，无需加锁。"""
+"""内存存储层 + Supabase 写回。
+线程模型：FastAPI 单事件循环内访问，无需加锁。
+
+内存仍是唯一事实来源：所有读路径零延迟、可离线演示，语义与接入 DB 前完全一致。
+写入点额外把值得留档的四类数据异步镜像到 Postgres（见 persistence.py）：
+profiles / candidate_pairs / ring_button_events / encounters。
+sightings 与 IMU 是热路径，不落库。
+"""
 from __future__ import annotations
 
 import time
 from collections import deque
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from . import config
+from . import config, tags
 from .models import (
-    CandidatePair, Encounter, IMUBatch, Sighting, SessionState, UserEventProfile, now,
+    CandidatePair, Encounter, IMUBatch, RingButtonEvent, Sighting, SessionState,
+    UserEventProfile, now,
 )
+from .persistence import persistence
+
+
+def _iso(dt: Optional[datetime]) -> Optional[str]:
+    return dt.isoformat() if dt else None
 
 
 class Store:
@@ -31,20 +43,64 @@ class Store:
     def upsert_profile(self, p: UserEventProfile) -> None:
         self.profiles[p.user_id] = p
         self.states.setdefault(p.user_id, SessionState.BLUE_OFFLINE)
+        self._persist_profile(p)
 
     def get_profile(self, user_id: str) -> Optional[UserEventProfile]:
         return self.profiles.get(user_id)
+
+    def _persist_profile(self, p: UserEventProfile) -> None:
+        """整行 upsert。normalized_tags 在写入时算好，让 SQL 侧也能直接算重合度。"""
+        persistence.write("events", {"event_id": p.event_id, "name": p.event_id},
+                          on_conflict="event_id")
+        persistence.write("user_event_profiles", {
+            "user_id": p.user_id,
+            "event_id": p.event_id,
+            "nickname": p.nickname,
+            "mode": p.mode.value,
+            "social_goal": p.social_goal,
+            "communication_style": p.communication_style,
+            "interest_tags": p.interest_tags,
+            "normalized_tags": tags.normalize_tags(p.interest_tags),
+            "share_bundle": p.share_bundle,
+            "state": self.get_state(p.user_id).value,
+            "expires_at": _iso(p.expires_at),
+            "updated_at": _iso(now()),
+        }, on_conflict="user_id,event_id")
+        for blocked in p.blocked_users:
+            persistence.write("blocks", {
+                "event_id": p.event_id, "user_id": p.user_id,
+                "blocked_user_id": blocked,
+            }, on_conflict="event_id,user_id,blocked_user_id")
 
     # ---- state ----
     def get_state(self, user_id: str) -> SessionState:
         return self.states.get(user_id, SessionState.BLUE_OFFLINE)
 
     def set_state(self, user_id: str, s: SessionState) -> None:
+        prev = self.states.get(user_id)
         self.states[user_id] = s
+        if prev == s:
+            return
+        p = self.profiles.get(user_id)
+        if p is None:
+            return
+        persistence.patch("user_event_profiles",
+                          f"user_id=eq.{user_id}&event_id=eq.{p.event_id}",
+                          {"state": s.value, "mode": p.mode.value,
+                           "updated_at": _iso(now())})
+        persistence.write("state_transitions", {
+            "user_id": user_id, "event_id": p.event_id,
+            "from_state": prev.value if prev else None, "to_state": s.value,
+        })
 
     # ---- ephemeral ----
     def register_ephemeral(self, ephemeral_id: str, user_id: str) -> None:
         self.ephemeral_map[ephemeral_id] = user_id
+        p = self.profiles.get(user_id)
+        persistence.write("ephemeral_ids", {
+            "ephemeral_id": ephemeral_id, "user_id": user_id,
+            "event_id": p.event_id if p else config.DEFAULT_EVENT_ID,
+        }, on_conflict="ephemeral_id")
 
     def resolve_ephemeral(self, ephemeral_id: str) -> Optional[str]:
         return self.ephemeral_map.get(ephemeral_id)
@@ -68,9 +124,44 @@ class Store:
             return 0.0
         return (seen[-1].seen_at - seen[0].seen_at).total_seconds()
 
+    # ---- mode ----
+    def update_mode(self, user_id: str, mode) -> None:
+        """模式变更的唯一入口，保证 DB 与内存一致（state_machine 调用）。"""
+        p = self.profiles.get(user_id)
+        if p is None:
+            return
+        p.mode = mode
+        persistence.patch("user_event_profiles",
+                          f"user_id=eq.{user_id}&event_id=eq.{p.event_id}",
+                          {"mode": mode.value, "updated_at": _iso(now())})
+
     # ---- pairs ----
     def add_pair(self, p: CandidatePair) -> None:
         self.pairs[p.pair_id] = p
+        persistence.write("candidate_pairs", {
+            "pair_id": p.pair_id,
+            "event_id": (self.profiles[p.user_a].event_id
+                         if p.user_a in self.profiles else config.DEFAULT_EVENT_ID),
+            "user_a": p.user_a,
+            "user_b": p.user_b,
+            "mode": p.mode.value,
+            "match_score": p.match_score,
+            "proximity_band": p.proximity_band,
+            "created_at": _iso(p.created_at),
+            "candidate_expires_at": _iso(p.candidate_expires_at),
+            "cancelled": p.cancelled,
+        })
+
+    def cancel_pair(self, p: CandidatePair, reason: str) -> None:
+        """取消候选的唯一入口（切蓝 / 窗口过期 / 已成 encounter）。"""
+        p.cancelled = True
+        persistence.patch("candidate_pairs", f"pair_id=eq.{p.pair_id}",
+                          {"cancelled": True, "cancel_reason": reason})
+
+    def set_pair_breakdown(self, pair_id: str, breakdown: dict) -> None:
+        """打分明细单独写，保留可解释性（matching 算完后调用）。"""
+        persistence.patch("candidate_pairs", f"pair_id=eq.{pair_id}",
+                          {"score_breakdown": breakdown})
 
     def get_pair(self, pair_id: str) -> Optional[CandidatePair]:
         return self.pairs.get(pair_id)
@@ -100,6 +191,13 @@ class Store:
         self.user_quiet_until[user_id] = (
             time.monotonic() + config.USER_NOTIFY_COOLDOWN_SECONDS
         )
+        # 内存用 monotonic（不受系统时钟跳变影响）；DB 存绝对时间，重启后仍可恢复冷却
+        p = self.profiles.get(user_id)
+        if p is not None:
+            until = now() + timedelta(seconds=config.USER_NOTIFY_COOLDOWN_SECONDS)
+            persistence.patch("user_event_profiles",
+                              f"user_id=eq.{user_id}&event_id=eq.{p.event_id}",
+                              {"quiet_until": _iso(until)})
 
     def clear_user_quiet(self, user_id: str) -> None:
         """确认失败/切蓝后可提前解除静默（可选，默认不调用）。"""
@@ -113,9 +211,36 @@ class Store:
     def mark_pair_tried(self, a: str, b: str) -> None:
         self.pair_tried_at[frozenset((a, b))] = time.monotonic()
 
+    # ---- button events（双方同意的证据链，必须留档） ----
+    def record_button_event(self, ev: RingButtonEvent) -> None:
+        persistence.write("ring_button_events", {
+            "pair_id": ev.pair_id,
+            "user_id": ev.user_id,
+            "event_type": ev.event_type.value,
+            "device_id": ev.device_id,
+            "detected_at": _iso(ev.detected_at),
+        }, on_conflict="pair_id,user_id,event_type")
+
     # ---- encounters ----
     def add_encounter(self, e: Encounter) -> None:
         self.encounters[e.encounter_id] = e
+        persistence.write("encounters", {
+            "encounter_id": e.encounter_id,
+            "pair_id": e.pair_id,
+            "confirmed_by": e.confirmed_by,
+            "confirmation_method": e.confirmation_method,
+            "shared_fields": e.shared_fields,
+            "optional_gesture": e.optional_gesture,
+            "created_at": _iso(e.created_at),
+        }, on_conflict="encounter_id")
+
+    def set_agent_content(self, encounter_id: str, content: dict) -> None:
+        """Agent 内容异步生成，晚于 encounter 落库，单独 patch。"""
+        e = self.encounters.get(encounter_id)
+        if e is not None:
+            e.agent_content = content
+        persistence.patch("encounters", f"encounter_id=eq.{encounter_id}",
+                          {"agent_content": content})
 
     # ---- imu (memory only) ----
     def add_imu(self, batch: IMUBatch) -> None:

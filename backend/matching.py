@@ -210,6 +210,9 @@ def create_pair(observer_id: str, cand: Candidate) -> CandidatePair:
         candidate_expires_at=now() + timedelta(seconds=config.CANDIDATE_TTL_SECONDS),
     )
     store.add_pair(pair)
+    other = store.get_profile(cand.user_id)
+    if me and other:
+        store.set_pair_breakdown(pair.pair_id, score_breakdown(me, other))
     store.mark_user_notified(observer_id)
     store.mark_user_notified(cand.user_id)
     store.mark_pair_tried(observer_id, cand.user_id)

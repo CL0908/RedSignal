@@ -1,0 +1,2694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>REDSIGNAL</title>
+  <style>
+    :root {
+      --bg: #F7F1E8;
+      --card: #FFFBF5;
+      --text: #2C2620;
+      --sub: #8A8178;
+      --red: #D95D5D;
+      --green: #5FA880;
+      --blue: #6F89B8;
+      --shadow: rgba(44,38,32,0.08);
+      --radius: 24px;
+      --sketch-radius: 22px 26px 20px 24px / 24px 20px 26px 22px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #E8E0D4;
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    .paper-grain {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 100;
+      opacity: 0.28;
+      mix-blend-mode: multiply;
+    }
+
+    #app {
+      width: 100%;
+      max-width: 430px;
+      height: 100%;
+      max-height: 932px;
+      background: var(--bg);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow:
+        0 0 0 1px rgba(44,38,32,0.06),
+        0 20px 60px rgba(44,38,32,0.18);
+    }
+
+    .status-bar {
+      height: 44px;
+      flex-shrink: 0;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 20px 12px;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: var(--text);
+    }
+    .logo span { color: var(--red); }
+
+    .ring-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--sub);
+    }
+    .ring-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--red);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--red);
+    }
+
+    .pages {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      min-height: 0;
+      min-width: 0;
+      touch-action: pan-y;
+    }
+
+    .page {
+      position: absolute;
+      inset: 0;
+      height: 100%;
+      min-height: 0;
+      min-width: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 0 16px 100px;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      touch-action: pan-y;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(20px);
+      transition: opacity 0.28s ease, transform 0.28s ease;
+      scrollbar-width: none;
+    }
+    .page::-webkit-scrollbar { display: none; }
+    .page.active { opacity: 1; pointer-events: auto; transform: translateX(0); }
+
+    /* Signal page */
+    .mascot-wrap {
+      display: flex;
+      justify-content: center;
+      padding: 24px 0 18px;
+      position: relative;
+    }
+    .mascot {
+      width: 180px;
+      height: 180px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .mascot video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      pointer-events: auto;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .mascot-shadow { display: none; }
+
+    .mascot::after {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border: 2px solid var(--text);
+      border-radius: 48% 52% 49% 51% / 51% 49% 52% 48%;
+      pointer-events: none;
+      opacity: 0.85;
+    }
+    .mascot::before {
+      content: '';
+      position: absolute;
+      inset: -7px;
+      border: 1px solid rgba(44,38,32,0.18);
+      border-radius: 52% 48% 51% 49% / 49% 51% 48% 52%;
+      pointer-events: none;
+      opacity: 0.55;
+    }
+
+    .hero-title {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .hero-title h1 {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .hero-title p {
+      font-size: 14px;
+      color: var(--sub);
+    }
+
+    .mode-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .mode-card {
+      background: var(--card);
+      border-radius: var(--sketch-radius);
+      padding: 16px 8px;
+      text-align: center;
+      box-shadow:
+        2px 3px 0 rgba(44,38,32,0.06),
+        0 2px 10px var(--shadow);
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.2s, border 0.2s;
+      border: 1.5px solid rgba(44,38,32,0.12);
+    }
+    .mode-card:active { transform: scale(0.96); }
+    .mode-card.selected {
+      border-color: currentColor;
+      box-shadow:
+        0 0 0 1.5px currentColor,
+        2px 4px 0 rgba(44,38,32,0.08);
+    }
+    .mode-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      margin: 0 auto 8px;
+      box-shadow: 0 0 10px currentColor;
+    }
+    .mode-card.red { color: var(--red); }
+    .mode-card.red .mode-dot { background: var(--red); }
+    .mode-card.green { color: var(--green); }
+    .mode-card.green .mode-dot { background: var(--green); }
+    .mode-card.blue { color: var(--blue); }
+    .mode-card.blue .mode-dot { background: var(--blue); }
+    .mode-label { font-size: 14px; font-weight: 600; color: var(--text); }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--sketch-radius);
+      padding: 16px 18px;
+      margin-bottom: 14px;
+      box-shadow:
+        2px 3px 0 rgba(44,38,32,0.05),
+        0 2px 10px var(--shadow);
+      border: 1px solid rgba(44,38,32,0.1);
+    }
+    .card-label {
+      font-size: 13px;
+      color: var(--sub);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .wish-text {
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+    .wish-text .muted { color: var(--sub); }
+
+    .tags-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .tag {
+      background: #F2EDE6;
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 18px 16px 20px 14px / 16px 20px 14px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      animation: popIn 0.2s ease;
+      border: 1px solid rgba(44,38,32,0.08);
+    }
+    @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .tag .remove { cursor: pointer; color: var(--sub); font-size: 16px; line-height: 1; }
+    .tag .remove:active { color: var(--red); }
+    .add-tag {
+      border: 1.5px dashed rgba(44,38,32,0.22);
+      color: var(--sub);
+      background: transparent;
+      padding: 8px 14px;
+      border-radius: 18px 16px 20px 14px / 16px 20px 14px 18px;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .add-tag:active { background: rgba(44,38,32,0.03); }
+
+    .health-stats {
+      display: flex;
+      justify-content: space-between;
+      padding-top: 4px;
+    }
+    .stat { text-align: left; }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stat-value small { font-size: 13px; color: var(--sub); font-weight: 500; margin-left: 2px; }
+    .stat-label { font-size: 12px; color: var(--sub); margin-top: 2px; }
+
+    /* Nearby page */
+    .nearby-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding-bottom: 80px;
+      text-align: center;
+    }
+    .nearby-empty h2 { font-size: 22px; margin-bottom: 10px; }
+    .nearby-empty p { font-size: 14px; color: var(--sub); max-width: 280px; line-height: 1.6; margin-bottom: 36px; }
+    .btn-primary {
+      width: 100%;
+      max-width: 360px;
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.18'/%3E%3C/svg%3E"),
+        var(--text);
+      color: #F7F1E8;
+      border: none;
+      border-radius: 30px 28px 32px 26px / 28px 32px 26px 30px;
+      padding: 16px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s, opacity 0.2s;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.08),
+        2px 4px 0 rgba(44,38,32,0.12);
+    }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
+    .btn-hint { margin-top: 16px; font-size: 13px; color: var(--sub); }
+
+    .radar-wrap {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding-bottom: 80px;
+    }
+    #page-nearby {
+      --radar-color: var(--red);
+      --radar-rgb: 217, 93, 93;
+    }
+    #page-nearby[data-mode="green"] {
+      --radar-color: var(--green);
+      --radar-rgb: 95, 168, 128;
+    }
+    #page-nearby[data-mode="blue"] {
+      --radar-color: var(--blue);
+      --radar-rgb: 111, 137, 184;
+    }
+    .radar {
+      width: 220px;
+      height: 220px;
+      position: relative;
+      margin-bottom: 40px;
+    }
+    .wave {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 30px;
+      height: 30px;
+      transform: translate(-50%, -50%);
+      border: 1.5px solid rgba(var(--radar-rgb), 0.35);
+      box-shadow: 0 0 14px rgba(var(--radar-rgb), 0.12);
+      opacity: 0;
+      animation: ripple 3.2s ease-out infinite;
+    }
+    .wave:nth-child(1) { animation-delay: 0s;    border-radius: 45% 55% 48% 52% / 52% 48% 54% 46%; }
+    .wave:nth-child(2) { animation-delay: 0.8s;  border-radius: 54% 46% 52% 48% / 48% 52% 45% 55%; }
+    .wave:nth-child(3) { animation-delay: 1.6s;  border-radius: 48% 52% 55% 45% / 54% 46% 52% 48%; }
+    .wave:nth-child(4) { animation-delay: 2.4s;  border-radius: 52% 48% 46% 54% / 46% 54% 48% 52%; }
+    @keyframes ripple {
+      0%   { width: 30px;  height: 30px;  opacity: 0;   transform: translate(-50%, -50%) rotate(0deg); }
+      15%  { opacity: 0.65; }
+      45%  { border-color: rgba(var(--radar-rgb), 0.22); }
+      100% { width: 250px; height: 250px; opacity: 0; transform: translate(-50%, -50%) rotate(25deg); border-color: rgba(var(--radar-rgb), 0.05); }
+    }
+    .radar-center {
+      position: absolute;
+      inset: 90px;
+      background: var(--text);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .radar-center svg { width: 34px; height: 34px; }
+    .radar-dot {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: var(--radar-color);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--radar-color);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:0.6;transform:scale(1);} 50%{opacity:1;transform:scale(1.3);} }
+    .radar-status { font-size: 16px; color: var(--sub); }
+    .radar-status strong { display: block; color: var(--text); font-size: 20px; margin-bottom: 6px; }
+
+    /* Messages page */
+    .msg-list { padding-top: 6px; }
+    .msg-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--card);
+      border-radius: var(--sketch-radius);
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      box-shadow:
+        2px 3px 0 rgba(44,38,32,0.05),
+        0 2px 10px var(--shadow);
+      cursor: pointer;
+      transition: transform 0.15s;
+      border: 1px solid rgba(44,38,32,0.1);
+    }
+    .msg-item:active { transform: scale(0.98); }
+    .msg-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.15'/%3E%3C/svg%3E"),
+        var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .msg-avatar svg { width: 30px; height: 30px; }
+    .msg-body { flex: 1; min-width: 0; }
+    .msg-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+    .msg-name { font-size: 16px; font-weight: 600; }
+    .msg-time { font-size: 12px; color: var(--sub); }
+    .msg-preview { font-size: 14px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Chat view */
+    .chat-view {
+      position: absolute;
+      inset: 0;
+      z-index: 15;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(.2,.8,.2,1), opacity 0.2s ease;
+    }
+    .chat-view.open {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0);
+    }
+    .chat-header {
+      display: grid;
+      grid-template-columns: 44px 1fr 44px;
+      align-items: center;
+      gap: 8px;
+      padding: calc(12px + env(safe-area-inset-top)) 14px 12px;
+      border-bottom: 1px solid rgba(44,38,32,0.08);
+      background: rgba(247,241,232,0.94);
+      backdrop-filter: blur(14px);
+      flex-shrink: 0;
+    }
+    .chat-back {
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .chat-back:active { background: rgba(44,38,32,0.08); }
+    .chat-back svg { width: 24px; height: 24px; }
+    .chat-person { min-width: 0; text-align: center; }
+    .chat-person strong {
+      display: block;
+      font-size: 16px;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-person span { display: block; margin-top: 2px; color: var(--green); font-size: 11px; }
+    .chat-header-mark {
+      width: 34px;
+      height: 34px;
+      justify-self: center;
+      border-radius: 50%;
+      background: var(--text);
+      position: relative;
+    }
+    .chat-header-mark::after {
+      content: '';
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      right: -1px;
+      bottom: 1px;
+      border: 2px solid var(--bg);
+      border-radius: 50%;
+      background: var(--green);
+    }
+    .chat-thread {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 18px 16px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overscroll-behavior: contain;
+      scrollbar-width: none;
+    }
+    .chat-thread::-webkit-scrollbar { display: none; }
+    .chat-day {
+      align-self: center;
+      margin: 2px 0 8px;
+      color: var(--sub);
+      font-size: 11px;
+    }
+    .chat-system {
+      align-self: center;
+      max-width: 82%;
+      margin-bottom: 4px;
+      padding: 7px 11px;
+      border-radius: 12px;
+      background: rgba(44,38,32,0.06);
+      color: var(--sub);
+      font-size: 11px;
+      line-height: 1.45;
+      text-align: center;
+    }
+    .chat-row { display: flex; flex-direction: column; max-width: 78%; }
+    .chat-row.incoming { align-self: flex-start; align-items: flex-start; }
+    .chat-row.outgoing { align-self: flex-end; align-items: flex-end; }
+    .chat-bubble {
+      padding: 11px 14px;
+      border: 1px solid rgba(44,38,32,0.08);
+      font-size: 15px;
+      line-height: 1.5;
+      word-break: break-word;
+      box-shadow: 1px 2px 0 rgba(44,38,32,0.04);
+    }
+    .incoming .chat-bubble {
+      background: var(--card);
+      border-radius: 18px 18px 18px 6px;
+    }
+    .outgoing .chat-bubble {
+      background: var(--text);
+      color: #F7F1E8;
+      border-radius: 18px 18px 6px 18px;
+    }
+    .chat-bubble-time { margin-top: 4px; padding: 0 3px; color: var(--sub); font-size: 10px; }
+    .chat-composer {
+      display: flex;
+      align-items: flex-end;
+      gap: 9px;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      border-top: 1px solid rgba(44,38,32,0.08);
+      background: rgba(247,241,232,0.96);
+      backdrop-filter: blur(14px);
+      flex-shrink: 0;
+    }
+    .chat-input {
+      flex: 1;
+      min-width: 0;
+      min-height: 44px;
+      max-height: 112px;
+      resize: none;
+      overflow-y: auto;
+      padding: 11px 14px;
+      border: 1px solid rgba(44,38,32,0.13);
+      border-radius: 22px;
+      outline: none;
+      background: #FDF9F2;
+      color: var(--text);
+      font: inherit;
+      font-size: 15px;
+      line-height: 20px;
+    }
+    .chat-input:focus { border-color: rgba(44,38,32,0.38); }
+    .chat-send {
+      width: 44px;
+      height: 44px;
+      flex: 0 0 44px;
+      border: 0;
+      border-radius: 50%;
+      background: var(--text);
+      color: #F7F1E8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .chat-send:active { transform: scale(0.94); }
+    .chat-send svg { width: 20px; height: 20px; }
+
+    /* Bottom nav */
+    .bottom-nav {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(247,241,232,0.95);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid rgba(44,38,32,0.08);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+      z-index: 10;
+    }
+    .nav-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 0;
+      cursor: pointer;
+      color: var(--sub);
+      transition: color 0.2s;
+      position: relative;
+    }
+    .nav-item.active { color: var(--text); }
+    .nav-item svg { width: 24px; height: 24px; }
+    .nav-item span { font-size: 12px; font-weight: 500; }
+    .nav-item.active::after {
+      content: '';
+      position: absolute;
+      inset: -2px 8px -2px;
+      border: 1.5px solid var(--text);
+      border-radius: 18px 16px 20px 14px / 16px 20px 14px 18px;
+      pointer-events: none;
+      box-shadow: 1px 2px 0 rgba(44,38,32,0.06);
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(44,38,32,0.35);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 20;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .modal-overlay.show { display: flex; opacity: 1; }
+    .modal {
+      background: var(--card);
+      width: 100%;
+      max-width: 430px;
+      border-radius: 28px 30px 0 0;
+      padding: 20px;
+      transform: translateY(100%);
+      transition: transform 0.25s ease;
+      box-shadow: 0 -4px 20px rgba(44,38,32,0.1);
+      border-top: 1px solid rgba(44,38,32,0.08);
+    }
+    .modal-overlay.show .modal { transform: translateY(0); }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 14px; }
+    .modal-input {
+      width: 100%;
+      border: 1px solid rgba(44,38,32,0.15);
+      border-radius: 16px 14px 18px 12px / 14px 18px 12px 16px;
+      padding: 12px 14px;
+      font-size: 15px;
+      outline: none;
+      margin-bottom: 12px;
+      background: #FDF9F2;
+    }
+    .modal-input:focus { border-color: var(--text); }
+    .modal-btns { display: flex; gap: 10px; }
+    .modal-btns button {
+      flex: 1;
+      padding: 12px;
+      border-radius: 16px 14px 18px 12px / 14px 18px 12px 16px;
+      border: none;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-cancel { background: #EDE8E0; color: var(--text); }
+    .btn-confirm {
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.18'/%3E%3C/svg%3E"),
+        var(--text);
+      color: #F7F1E8;
+    }
+
+    /* Status page */
+    #page-status {
+      background: #030305;
+      padding: 0;
+    }
+    #status-page-frame {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #030305;
+    }
+    .status-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      color: #eee;
+      -webkit-overflow-scrolling: touch;
+    }
+    .status-container canvas {
+      display: block;
+      position: fixed;
+      top: 54px;
+      left: 0;
+      width: 100%;
+      height: calc(100% - 124px);
+      z-index: 0;
+    }
+    .status-container .panel {
+      position: relative;
+      background: rgba(15, 15, 18, 0.62);
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+      backdrop-filter: blur(10px);
+      user-select: none;
+      margin: 12px;
+      z-index: 2;
+    }
+    #panel-personality { margin-top: 12px; }
+    #panel-misc { border-color: rgba(150, 100, 255, 0.3); margin-bottom: 100px; }
+    .status-container h2 {
+      margin: 0 0 12px 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 1px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding-bottom: 8px;
+    }
+    #panel-misc h2 { color: #b48cff; border-bottom-color: rgba(150, 100, 255, 0.2); }
+    .status-container .desc {
+      font-size: 10px;
+      color: #888;
+      margin-bottom: 12px;
+      margin-top: -8px;
+      line-height: 1.4;
+    }
+    .status-container .control-group { margin-bottom: 14px; }
+    .status-container .control-group:last-child { margin-bottom: 0; }
+    .status-container .control-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 6px;
+      color: #ccc;
+    }
+    .status-container .slider-row { display: flex; align-items: center; gap: 8px; }
+    .status-container .quality-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .status-container .quality-button {
+      appearance: none;
+      border: 1px solid rgba(150, 100, 255, 0.28);
+      background: rgba(150, 100, 255, 0.07);
+      color: #aaa;
+      border-radius: 6px;
+      padding: 6px 3px;
+      font: inherit;
+      font-size: 10px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .status-container .quality-button:hover { background: rgba(150, 100, 255, 0.15); color: #ddd; }
+    .status-container .quality-button.active {
+      border-color: #b48cff;
+      background: rgba(150, 100, 255, 0.22);
+      color: #d7c3ff;
+      box-shadow: 0 0 10px rgba(150, 100, 255, 0.12);
+    }
+    .status-container input[type=range].state-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      background: rgba(255,255,255,0.15);
+      height: 4px;
+      border-radius: 2px;
+      outline: none;
+      transition: 0.3s;
+    }
+    .status-container input[type=range].state-slider:hover { background: rgba(255,255,255,0.25); }
+    .status-container input[type=range].state-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #fff;
+      cursor: pointer;
+      box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    }
+    .status-container input[type=range].misc-slider { background: rgba(150, 100, 255, 0.15); }
+    .status-container input[type=range].misc-slider:hover { background: rgba(150, 100, 255, 0.25); }
+    .status-container input[type=range].misc-slider::-webkit-slider-thumb { background: #b48cff; }
+    .status-container .bound-input {
+      width: 40px;
+      height: 18px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(0, 255, 150, 0.3);
+      color: #00ff96;
+      font-size: 10px;
+      text-align: center;
+      border-radius: 4px;
+      outline: none;
+      transition: border 0.3s;
+    }
+    .status-container .bound-input:focus { border-color: #00ff96; }
+    .status-container .misc-input { border-color: rgba(150, 100, 255, 0.3); color: #b48cff; }
+    .status-container .misc-input:focus { border-color: #b48cff; }
+    .status-container input[type="number"]::-webkit-outer-spin-button,
+    .status-container input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .status-container .bound-color {
+      width: 22px;
+      height: 22px;
+      border: none;
+      padding: 0;
+      background: none;
+      cursor: pointer;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .status-container .bound-color::-webkit-color-swatch-wrapper { padding: 0; }
+    .status-container .bound-color::-webkit-color-swatch { border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; }
+
+    /* ===== Hand-drawn paper art direction ===== */
+    :root {
+      --bg: #F7F0E4;
+      --card: rgba(255, 252, 244, 0.54);
+      --text: #292824;
+      --sub: #817C74;
+      --red: #D74F4D;
+      --green: #4FA278;
+      --blue: #7E899D;
+      --shadow: rgba(64, 53, 43, 0.10);
+      --pencil: rgba(49, 46, 41, 0.54);
+      --pencil-soft: rgba(74, 67, 58, 0.22);
+    }
+    body {
+      background: #DED3C5;
+      color: var(--text);
+    }
+    #app {
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(rgba(250,246,238,0.18), rgba(250,246,238,0.18)),
+        url("UIstatic/paper_texture_handdrawn.png");
+      background-size: cover;
+      background-position: center top;
+      box-shadow:
+        0 0 0 1px rgba(53,47,40,0.08),
+        0 20px 60px rgba(53,47,40,0.16);
+    }
+    .paper-grain {
+      opacity: 0.08;
+      mix-blend-mode: multiply;
+    }
+    .status-bar { height: 30px; }
+    .header {
+      padding: 12px 27px 20px;
+    }
+    .logo {
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 850;
+      letter-spacing: 3.5px;
+      text-shadow: 0.4px 0.5px 0 rgba(130,55,50,0.20);
+    }
+    .logo .logo-mode-word {
+      color: var(--red);
+      margin-left: 0;
+      transition: color 0.22s ease;
+    }
+    .logo[data-mode="green"] .logo-mode-word {
+      color: var(--green);
+    }
+    .logo[data-mode="blue"] .logo-mode-word {
+      color: var(--blue);
+    }
+    .logo .logo-signal-word {
+      color: var(--text);
+      margin-left: 4px;
+    }
+    .ring-status {
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 550;
+      letter-spacing: 0.4px;
+    }
+    .ring-dot {
+      width: 9px;
+      height: 9px;
+      background: var(--red);
+      box-shadow:
+        0 0 0 1px rgba(140,52,49,0.20),
+        1px 1px 0 rgba(140,52,49,0.18);
+    }
+    .page {
+      padding: 4px 26px 126px;
+    }
+
+    /* Signal */
+    .mascot-wrap {
+      padding: 16px 0 10px;
+    }
+    .mascot {
+      width: 196px;
+      height: 196px;
+      filter: grayscale(0.92) sepia(0.12) contrast(1.12);
+      mix-blend-mode: multiply;
+    }
+    .mascot::after {
+      inset: -5px;
+      border: 1.5px solid rgba(44,42,38,0.48);
+      opacity: 0.5;
+      box-shadow: 1px 2px 0 rgba(52,48,42,0.08);
+    }
+    .mascot::before {
+      inset: -8px -6px -7px -9px;
+      border-color: rgba(61,55,47,0.18);
+      opacity: 0.75;
+    }
+    .hero-title {
+      margin-bottom: 22px;
+    }
+    .hero-title h1 {
+      margin-bottom: 8px;
+      font-size: 29px;
+      font-weight: 760;
+      letter-spacing: 1px;
+    }
+    .hero-title p {
+      font-size: 14px;
+      letter-spacing: 0.5px;
+    }
+    .mode-cards {
+      gap: 10px;
+      margin-bottom: 17px;
+    }
+    .mode-card {
+      min-height: 90px;
+      padding: 15px 6px 13px;
+      border: 1.5px solid rgba(65,59,52,0.36);
+      border-radius: 22px 18px 24px 19px / 19px 24px 18px 23px;
+      background: rgba(255,253,247,0.24);
+      box-shadow:
+        1px 2px 0 rgba(68,58,48,0.12),
+        inset -1px -1px 0 rgba(77,65,54,0.07);
+    }
+    .mode-card:nth-child(2) {
+      border-radius: 18px 23px 19px 25px / 24px 18px 23px 19px;
+      transform: rotate(-0.18deg);
+    }
+    .mode-card:nth-child(3) {
+      border-radius: 24px 19px 22px 18px / 18px 22px 20px 25px;
+      transform: rotate(0.16deg);
+    }
+    .mode-card.selected {
+      border-color: currentColor;
+      border-width: 2px;
+      background: rgba(255,250,242,0.58);
+      box-shadow:
+        2px 2px 0 color-mix(in srgb, currentColor 22%, transparent),
+        -1px -1px 0 color-mix(in srgb, currentColor 12%, transparent);
+    }
+    .mode-dot {
+      width: 27px;
+      height: 27px;
+      margin-bottom: 10px;
+      box-shadow:
+        inset 2px -2px 0 rgba(37,34,31,0.15),
+        1px 1px 0 rgba(58,50,43,0.16);
+    }
+    .mode-label {
+      font-size: 14px;
+      letter-spacing: 0.3px;
+    }
+    .card {
+      margin-bottom: 13px;
+      padding: 19px 22px 21px;
+      border: 0;
+      border-radius: 0;
+      background-color: transparent;
+      background-image: url("UIstatic/Box2.png");
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: 100% 100%;
+      box-shadow: none;
+    }
+    .card:nth-of-type(even) {
+      background-image: url("UIstatic/Box1.png");
+    }
+    .card-tags {
+      position: relative;
+      isolation: isolate;
+      background-image: url("UIstatic/Box2.png") !important;
+    }
+    .card-tags::before {
+      content: '';
+      position: absolute;
+      inset: 11px 13px 12px;
+      z-index: 0;
+      pointer-events: none;
+      border-radius: 18px 16px 20px 17px / 16px 20px 17px 19px;
+      background: rgba(250, 247, 239, 0.30);
+    }
+    .card-tags > * {
+      position: relative;
+      z-index: 1;
+    }
+    .card-wish,
+    .card-health {
+      position: relative;
+      isolation: isolate;
+      overflow: visible;
+      background-color: transparent;
+      background-image: none !important;
+    }
+    .card-wish::before,
+    .card-health::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background: url("UIstatic/Box2.png") center / 100% 100% no-repeat;
+      opacity: 0.78;
+    }
+    .card-wish::before {
+      filter: grayscale(0.42) sepia(0.28) saturate(0.62) contrast(0.94) brightness(1.03);
+      transform: rotate(-0.08deg);
+    }
+    .card-health::before {
+      filter: grayscale(0.42) sepia(0.28) saturate(0.62) contrast(0.94) brightness(1.03);
+      transform: rotate(0.08deg);
+    }
+    .card-wish::after,
+    .card-health::after {
+      content: '';
+      position: absolute;
+      inset: 5px 4px 5px 5px;
+      z-index: 0;
+      pointer-events: none;
+      border: 1px solid transparent;
+      border-radius: 23px 20px 25px 21px / 21px 25px 20px 24px;
+      opacity: 0.52;
+    }
+    .card-wish::after {
+      border-color: rgba(91, 117, 96, 0.22);
+      box-shadow: 1px 0 0 rgba(91, 117, 96, 0.08);
+      transform: rotate(0.12deg);
+    }
+    .card-health::after {
+      border-color: rgba(95, 111, 130, 0.20);
+      box-shadow: -1px 1px 0 rgba(95, 111, 130, 0.07);
+      transform: rotate(-0.1deg);
+    }
+    .card-wish > *,
+    .card-health > * {
+      position: relative;
+      z-index: 1;
+    }
+    .card-wish .card-label {
+      color: #69736A;
+    }
+    .card-health .card-label {
+      color: #6C747E;
+    }
+    .card-label {
+      margin-bottom: 12px;
+      color: #68715C;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+    }
+    .wish-text {
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    .tags-wrap { gap: 8px; }
+    .tag {
+      padding: 7px 13px;
+      border: 1.2px solid rgba(64,58,51,0.34);
+      border-radius: 16px 19px 15px 18px / 18px 15px 19px 16px;
+      background: rgba(247,238,224,0.38);
+      box-shadow: 1px 1px 0 rgba(63,54,46,0.08);
+    }
+    .add-tag {
+      padding: 7px 13px;
+      border-color: rgba(64,58,51,0.42);
+      border-radius: 18px 15px 19px 16px / 15px 19px 16px 18px;
+      font-weight: 550;
+    }
+    .health-stats {
+      padding-top: 2px;
+    }
+    .stat-value {
+      font-family: "Courier New", monospace;
+      font-size: 29px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+    }
+    .stat-label {
+      margin-top: 4px;
+      font-size: 12px;
+    }
+
+    /* Nearby */
+    .nearby-empty,
+    .radar-wrap {
+      padding-bottom: 68px;
+    }
+    .nearby-mascot {
+      width: 126px;
+      height: 116px;
+      position: relative;
+      margin: -8px 0 24px;
+      filter: drop-shadow(2px 4px 2px rgba(48,41,35,0.13));
+    }
+    .nearby-mascot-body {
+      position: absolute;
+      left: 18px;
+      top: 0;
+      width: 92px;
+      height: 92px;
+      border: 2px solid rgba(25,24,22,0.78);
+      border-radius: 48% 52% 47% 53% / 52% 48% 54% 46%;
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.18' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E"),
+        #292824;
+      box-shadow:
+        inset 5px 4px 0 rgba(255,255,255,0.035),
+        1px 2px 0 rgba(22,21,19,0.20);
+      transform: rotate(-1.2deg);
+    }
+    .nearby-mascot-eye {
+      position: absolute;
+      top: 31px;
+      width: 17px;
+      height: 26px;
+      border-radius: 50%;
+      background: #F8F1E5;
+      box-shadow: inset 1px 0 0 rgba(82,72,60,0.18);
+    }
+    .nearby-mascot-eye.left { left: 22px; transform: rotate(2deg); }
+    .nearby-mascot-eye.right { right: 22px; transform: rotate(-2deg); }
+    .nearby-empty h2 {
+      margin-bottom: 16px;
+      font-size: 29px;
+      font-weight: 750;
+      letter-spacing: 1px;
+    }
+    .nearby-empty p {
+      max-width: 315px;
+      margin-bottom: 32px;
+      font-size: 15px;
+      line-height: 1.85;
+      letter-spacing: 0.4px;
+    }
+    .btn-primary {
+      max-width: 355px;
+      padding: 17px 18px;
+      border: 1.4px solid rgba(35,33,29,0.78);
+      border-radius: 27px 23px 29px 25px / 24px 29px 23px 28px;
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.16' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E"),
+        var(--text);
+      font-size: 17px;
+      letter-spacing: 0.8px;
+      box-shadow:
+        2px 3px 0 rgba(49,43,37,0.16),
+        inset 1px 1px 0 rgba(255,255,255,0.08);
+    }
+    .btn-hint {
+      width: 100%;
+      max-width: 355px;
+      margin-top: 16px;
+      padding: 15px 12px;
+      border: 1px solid rgba(89,79,68,0.16);
+      border-radius: 25px 28px 23px 27px / 28px 23px 27px 24px;
+      background: rgba(255,252,245,0.16);
+      font-size: 13px;
+    }
+    .radar {
+      filter: drop-shadow(1px 2px 0 rgba(53,45,38,0.08));
+    }
+    .radar-center {
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.2' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.22'/%3E%3C/svg%3E"),
+        var(--text);
+    }
+
+    /* Messages */
+    .msg-list {
+      padding-top: 12px;
+    }
+    .msg-item {
+      min-height: 104px;
+      gap: 17px;
+      margin-bottom: 15px;
+      padding: 19px 24px 19px 20px;
+      border: 0;
+      border-radius: 0;
+      background-color: transparent;
+      background-image: url("UIstatic/Box1.png");
+      background-position: center;
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+      box-shadow: none;
+    }
+    .msg-item:nth-child(even) {
+      transform: rotate(-0.12deg);
+    }
+    .msg-item:active { transform: scale(0.985) rotate(0.1deg); }
+    .msg-avatar {
+      width: 62px;
+      height: 62px;
+      border: 1.5px solid rgba(29,27,24,0.74);
+      border-radius: 48% 52% 49% 51% / 52% 47% 53% 48%;
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.2' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.34'/%3E%3C/svg%3E"),
+        var(--text);
+      box-shadow: 2px 3px 0 rgba(46,40,35,0.14);
+    }
+    .msg-avatar svg { width: 37px; height: 37px; }
+    .msg-name {
+      font-size: 18px;
+      font-weight: 720;
+      letter-spacing: 0.4px;
+    }
+    .msg-preview {
+      margin-top: 7px;
+      font-size: 14px;
+      letter-spacing: 0.2px;
+    }
+    .msg-time {
+      font-size: 13px;
+    }
+
+    /* Chat */
+    .chat-view {
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(rgba(250,246,238,0.15), rgba(250,246,238,0.15)),
+        url("UIstatic/paper_texture_handdrawn.png");
+      background-size: cover;
+    }
+    .chat-header {
+      padding: calc(24px + env(safe-area-inset-top)) 16px 14px;
+      border-bottom: 1.3px solid rgba(54,49,43,0.23);
+      background: rgba(248,241,229,0.76);
+      box-shadow: 0 2px 0 rgba(70,61,52,0.05);
+    }
+    .chat-back {
+      border: 1.2px solid rgba(66,59,51,0.30);
+      border-radius: 48% 52% 46% 54% / 52% 47% 53% 48%;
+    }
+    .chat-header-mark {
+      border: 1px solid rgba(35,32,28,0.60);
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.22' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.30'/%3E%3C/svg%3E"),
+        var(--text);
+    }
+    .chat-thread {
+      padding: 21px 18px 28px;
+    }
+    .chat-system {
+      border: 1px solid rgba(75,68,59,0.14);
+      background: rgba(248,240,227,0.55);
+    }
+    .chat-bubble {
+      border-width: 1.3px;
+      border-color: rgba(58,53,46,0.30);
+      box-shadow: 1px 2px 0 rgba(58,50,42,0.08);
+    }
+    .incoming .chat-bubble {
+      background: rgba(255,252,244,0.66);
+      border-radius: 19px 17px 21px 7px / 17px 21px 18px 8px;
+    }
+    .outgoing .chat-bubble {
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.18' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E"),
+        var(--text);
+      border-radius: 17px 20px 7px 19px / 20px 17px 8px 18px;
+    }
+    .chat-composer {
+      padding: 11px 13px calc(11px + env(safe-area-inset-bottom));
+      border-top: 1.3px solid rgba(54,49,43,0.22);
+      background: rgba(248,241,229,0.84);
+    }
+    .chat-input {
+      border: 1.3px solid rgba(62,56,49,0.35);
+      border-radius: 23px 20px 25px 21px / 21px 25px 20px 24px;
+      background: rgba(255,252,245,0.58);
+    }
+    .chat-send {
+      border: 1px solid rgba(34,31,28,0.62);
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.2' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E"),
+        var(--text);
+    }
+
+    /* Navigation */
+    .bottom-nav {
+      left: 10px;
+      right: 10px;
+      bottom: 8px;
+      padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+      border: 1.2px solid rgba(65,58,51,0.25);
+      border-radius: 28px 25px 30px 24px / 25px 30px 24px 29px;
+      background-color: rgba(249,243,233,0.86);
+      background-image: url("UIstatic/paper_texture_handdrawn.png");
+      background-size: 430px auto;
+      box-shadow:
+        1px 2px 0 rgba(58,50,43,0.10),
+        inset -1px -1px 0 rgba(68,59,51,0.05);
+      backdrop-filter: blur(7px);
+    }
+    .nav-item {
+      min-height: 58px;
+      gap: 5px;
+      padding: 8px 0 7px;
+    }
+    .nav-item svg {
+      width: 23px;
+      height: 23px;
+      filter: drop-shadow(0.5px 0.5px 0 rgba(49,44,38,0.15));
+    }
+    .nav-item span {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+    }
+    .nav-item.active::after {
+      inset: -3px 3px -3px;
+      border: 1.7px solid currentColor;
+      border-radius: 22px 18px 24px 20px / 19px 24px 18px 23px;
+      box-shadow:
+        1px 2px 0 rgba(49,43,37,0.10),
+        -1px -1px 0 rgba(49,43,37,0.06);
+    }
+
+    /* Dark app chrome for the particle status page */
+    #app,
+    .header,
+    .status-bar,
+    .bottom-nav {
+      transition: background-color 0.24s ease, border-color 0.24s ease, color 0.24s ease;
+    }
+    #app.status-theme {
+      background-color: #030305;
+      background-image:
+        linear-gradient(rgba(3,3,5,0.94), rgba(3,3,5,0.94)),
+        url("UIstatic/paper_texture_handdrawn.png");
+    }
+    #app.status-theme .header {
+      background: rgba(3,3,5,0.72);
+    }
+    #app.status-theme .status-bar {
+      background: rgba(3,3,5,0.72);
+    }
+    #app.status-theme .logo .logo-signal-word {
+      color: #F2EEE8;
+    }
+    #app.status-theme .ring-status {
+      color: #AAA7AF;
+    }
+    #app.status-theme .bottom-nav {
+      border-color: rgba(255,255,255,0.13);
+      background-color: rgba(7,7,10,0.96);
+      background-image:
+        linear-gradient(rgba(5,5,8,0.94), rgba(5,5,8,0.94)),
+        url("UIstatic/paper_texture_handdrawn.png");
+      box-shadow:
+        1px 2px 0 rgba(0,0,0,0.36),
+        inset -1px -1px 0 rgba(255,255,255,0.04);
+    }
+    #app.status-theme .nav-item {
+      color: #7F7D86;
+    }
+    #app.status-theme .nav-item.active {
+      color: #F1EEF3;
+    }
+
+    /* Modals */
+    .modal-overlay {
+      background: rgba(54,47,40,0.28);
+    }
+    .modal {
+      border: 1.3px solid rgba(57,51,44,0.36);
+      border-bottom: 0;
+      border-radius: 29px 25px 0 0 / 25px 30px 0 0;
+      background-color: var(--bg);
+      background-image: url("UIstatic/paper_texture_handdrawn.png");
+      background-size: cover;
+      box-shadow: 0 -5px 0 rgba(66,56,47,0.08);
+    }
+    .modal-input {
+      border: 1.3px solid rgba(61,55,48,0.36);
+      background: rgba(255,252,245,0.58);
+    }
+    .btn-cancel {
+      border: 1.2px solid rgba(64,58,51,0.26);
+      background: rgba(237,229,217,0.55);
+    }
+    .btn-confirm {
+      border: 1px solid rgba(37,34,30,0.65);
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.2' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.14'/%3E%3C/svg%3E"),
+        var(--text);
+    }
+
+    @media (max-height: 760px) {
+      .status-bar { height: 20px; }
+      .header { padding-top: 9px; padding-bottom: 12px; }
+      .mascot-wrap { padding-top: 4px; }
+      .mascot { width: 158px; height: 158px; }
+      .hero-title { margin-bottom: 15px; }
+      .mode-card { min-height: 78px; padding-top: 11px; }
+      .card { padding-top: 16px; padding-bottom: 17px; }
+      .nearby-mascot { margin-bottom: 12px; transform: scale(0.86); }
+      .nearby-empty h2 { font-size: 25px; }
+    }
+
+    /* 每个一级 Tab 各自独立滚动。
+       后面的纸质主题只改观感，不许动这里的滚动契约。
+
+       高度必须交给 flex 算，不能写死：#app 是 flex 列，
+       依次是 .status-bar → .header → .pages，而 .bottom-nav 是
+       position:absolute 不占流。写成 calc(100dvh - 74px) 等于
+       减了个根本不在流里的高度，又漏减了 status-bar + header，
+       .pages 会比可视区高出一截，底部内容被 #app 的 overflow:hidden 裁掉。 */
+    html, body { overflow: hidden; }
+    #app {
+      min-height: 0;
+      height: 100dvh;
+      max-height: 932px;
+    }
+    .pages {
+      flex: 1 1 auto;
+      min-height: 0;          /* 没有它，flex 子项不肯收缩到内容以下 */
+    }
+    .page {
+      /* 已经是 position:absolute; inset:0，尺寸由 .pages 决定 */
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      touch-action: pan-y;
+    }
+    @supports not (height: 100dvh) {
+      #app { height: 100vh; }
+    }
+  </style>
+</head>
+<body>
+  <svg class="paper-grain" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+    </filter>
+    <rect width="100%" height="100%" filter="url(#grain)"/>
+  </svg>
+  <div id="app">
+    <div class="status-bar"></div>
+    <header class="header">
+      <div class="logo" id="app-logo" data-mode="red">
+        <span class="logo-mode-word" id="logo-mode-word">RED</span><span class="logo-signal-word">SIGNAL</span>
+      </div>
+      <div class="ring-status"><div class="ring-dot"></div>戒指已连接</div>
+    </header>
+
+    <main class="pages">
+      <!-- Signal Page -->
+      <section class="page active" id="page-signal">
+        <div class="mascot-wrap">
+          <div class="mascot" id="mascot" onclick="onMascotClick()">
+            <video id="mascot-video" muted autoplay playsinline webkit-playsinline preload="auto"></video>
+          </div>
+          <div class="mascot-shadow"></div>
+        </div>
+
+        <div class="hero-title">
+          <h1 id="hero-title">想遇见心动的人</h1>
+          <p id="hero-sub">只与同样选择红色的人匹配</p>
+        </div>
+
+        <div class="mode-cards">
+          <div class="mode-card red selected" data-mode="red" onclick="selectMode('red')">
+            <div class="mode-dot"></div>
+            <div class="mode-label">红 · 心动</div>
+          </div>
+          <div class="mode-card green" data-mode="green" onclick="selectMode('green')">
+            <div class="mode-dot"></div>
+            <div class="mode-label">绿 · 同好</div>
+          </div>
+          <div class="mode-card blue" data-mode="blue" onclick="selectMode('blue')">
+            <div class="mode-dot"></div>
+            <div class="mode-label">蓝 · 暂停</div>
+          </div>
+        </div>
+
+        <div class="card card-wish">
+          <div class="card-label">今天想找</div>
+          <div class="wish-text" id="wish-text" onclick="editWish()">
+            能一起做产品的人<span class="muted"> · 长按戒指说一句话可以改</span>
+          </div>
+        </div>
+
+        <div class="card card-tags">
+          <div class="card-label"><span>我的标签</span><span id="tag-count">3</span></div>
+          <div class="tags-wrap" id="tags-wrap">
+            <span class="tag">AI Agent</span>
+            <span class="tag">智能硬件<span class="remove" onclick="removeTag(this)">×</span></span>
+            <span class="tag">科幻电影<span class="remove" onclick="removeTag(this)">×</span></span>
+            <button class="add-tag" onclick="openAddTag()">+ 添加</button>
+          </div>
+        </div>
+
+        <div class="card card-health">
+          <div class="card-label"><span>今天</span><span>来自手环</span></div>
+          <div class="health-stats">
+            <div class="stat">
+              <div class="stat-value">4210</div>
+              <div class="stat-label">步数</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">3.1<small>km</small></div>
+              <div class="stat-label">距离</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">42<small>min</small></div>
+              <div class="stat-label">活跃</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Nearby Page -->
+      <section class="page" id="page-nearby" data-mode="red">
+        <div class="nearby-empty" id="nearby-empty">
+          <div class="nearby-mascot" aria-hidden="true">
+            <div class="nearby-mascot-body">
+              <span class="nearby-mascot-eye left"></span>
+              <span class="nearby-mascot-eye right"></span>
+            </div>
+          </div>
+          <h2>还没开始发现</h2>
+          <p>开启后，手机会用一个每隔几分钟就更换的匿名编号广播，不发送你的位置。</p>
+          <button class="btn-primary" onclick="startDiscovery()">开始匿名发现</button>
+          <div class="btn-hint">由 App 确认（戒指没反应时）</div>
+        </div>
+        <div class="radar-wrap" id="radar-wrap">
+          <div class="radar">
+            <div class="wave"></div>
+            <div class="wave"></div>
+            <div class="wave"></div>
+            <div class="wave"></div>
+            <div class="radar-center">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+            <div class="radar-dot" style="top:40px;left:60px"></div>
+            <div class="radar-dot" style="top:150px;left:170px;animation-delay:0.4s"></div>
+            <div class="radar-dot" style="top:120px;left:50px;animation-delay:0.8s"></div>
+          </div>
+          <div class="radar-status">
+            <strong>正在匿名发现</strong>
+            已广播匿名编号 <span id="anon-code">#8A2F</span>
+          </div>
+          <button class="btn-primary" style="margin-top:40px;background:var(--red)" onclick="stopDiscovery()">停止发现</button>
+        </div>
+      </section>
+
+      <!-- Status Page -->
+      <section class="page" id="page-status">
+        <iframe id="status-page-frame" src="status_v11_mobile.html" title="Status" loading="eager"></iframe>
+        <div class="status-container" id="legacy-status-container" hidden>
+          <div id="panel-personality" class="panel">
+            <h2>1. 专属生命基底</h2>
+            <div class="desc">底层形态参数（内部固定边界）</div>
+            <div class="control-group">
+              <label><span>倾向 (内敛 ←→ 外向)</span> <span id="val-ext">21%</span></label>
+              <div class="slider-row">
+                <input type="range" class="state-slider" id="param-ext" min="0" max="100" value="21">
+              </div>
+            </div>
+            <div class="control-group">
+              <label><span>情绪 (伤心 ←→ 开心)</span> <span id="val-joy">100%</span></label>
+              <div class="slider-row">
+                <input type="range" class="state-slider" id="param-joy" min="0" max="100" value="100">
+              </div>
+            </div>
+          </div>
+
+          <div id="panel-vitals" class="panel">
+            <h2>2. 即时感知</h2>
+            <div class="desc">左侧下限，右侧上限，滑条调节插值。</div>
+            <div class="control-group">
+              <label><span>心率 (旋转)</span> <span id="val-hr">45%</span></label>
+              <div class="slider-row">
+                <input type="number" id="min-hr" class="bound-input" value="0.001" step="0.001">
+                <input type="range" class="state-slider" id="param-hr" min="0" max="100" value="45">
+                <input type="number" id="max-hr" class="bound-input" value="0.006" step="0.01">
+              </div>
+            </div>
+            <div class="control-group">
+              <label><span>压力 (聚敛)</span> <span id="val-stress">73%</span></label>
+              <div class="slider-row">
+                <input type="number" id="min-stress" class="bound-input" value="1.5" step="0.1">
+                <input type="range" class="state-slider" id="param-stress" min="0" max="100" value="73">
+                <input type="number" id="max-stress" class="bound-input" value="0.3" step="0.1">
+              </div>
+            </div>
+            <div class="control-group">
+              <label><span>血氧 (触角力度)</span> <span id="val-oxy">23%</span></label>
+              <div class="slider-row">
+                <input type="number" id="min-oxy" class="bound-input" value="0" step="10">
+                <input type="range" class="state-slider" id="param-oxy" min="0" max="100" value="23">
+                <input type="number" id="max-oxy" class="bound-input" value="400" step="10">
+              </div>
+            </div>
+            <div class="control-group">
+              <label><span>体温 (色彩)</span> <span id="val-temp">0%</span></label>
+              <div class="slider-row">
+                <input type="color" id="min-temp" class="bound-color" value="#0a50ff">
+                <input type="range" class="state-slider" id="param-temp" min="0" max="100" value="0">
+                <input type="color" id="max-temp" class="bound-color" value="#ff3c14">
+              </div>
+            </div>
+          </div>
+
+          <div id="panel-misc" class="panel">
+            <h2>3. 未归类参数</h2>
+            <div class="desc">控制生命体内外律动及渲染法则。</div>
+            <div class="control-group">
+              <label><span>粒子档位</span> <span id="val-quality">低 · 800</span></label>
+              <div class="quality-options" role="group" aria-label="粒子档位">
+                <button type="button" class="quality-button active" data-count="800" data-label="低">低<br>800</button>
+                <button type="button" class="quality-button" data-count="1500" data-label="中">中<br>1500</button>
+                <button type="button" class="quality-button" data-count="2500" data-label="高">高<br>2500</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <label><span>跳跃速度</span> <span id="val-jumpspeed">0%</span></label>
+              <div class="slider-row">
+                <input type="number" id="min-jumpspeed" class="bound-input misc-input" value="0" step="0.1">
+                <input type="range" class="state-slider misc-slider" id="param-jumpspeed" min="0" max="100" value="0">
+                <input type="number" id="max-jumpspeed" class="bound-input misc-input" value="50" step="0.5">
+              </div>
+            </div>
+            <div class="control-group">
+              <label><span>突触频率 (触角速度)</span> <span id="val-synspeed">0%</span></label>
+              <div class="slider-row">
+                <input type="number" id="min-synspeed" class="bound-input misc-input" value="0.1" step="0.1">
+                <input type="range" class="state-slider misc-slider" id="param-synspeed" min="0" max="100" value="0">
+                <input type="number" id="max-synspeed" class="bound-input misc-input" value="0.5" step="0.5">
+              </div>
+            </div>
+            <div class="control-group">
+              <label><span>触角随机性</span> <span id="val-tentrandom">70%</span></label>
+              <div class="slider-row">
+                <input type="range" class="state-slider misc-slider" id="param-tentrandom" min="0" max="100" value="70">
+              </div>
+            </div>
+            <div class="control-group">
+              <label><span>中心饱和度</span> <span id="val-coresat">70%</span></label>
+              <div class="slider-row">
+                <input type="number" id="min-coresat" class="bound-input misc-input" value="0.0" step="0.1">
+                <input type="range" class="state-slider misc-slider" id="param-coresat" min="0" max="100" value="70">
+                <input type="number" id="max-coresat" class="bound-input misc-input" value="1.0" step="0.1">
+              </div>
+            </div>
+          </div>
+
+          <canvas id="status-canvas"></canvas>
+        </div>
+      </section>
+
+      <!-- Messages Page -->
+      <section class="page" id="page-messages">
+        <div class="msg-list">
+          <div class="msg-item" onclick="openChat('低频')">
+            <div class="msg-avatar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1.5" fill="#34C759"/><circle cx="15" cy="10" r="1.5" fill="#34C759"/></svg>
+            </div>
+            <div class="msg-body">
+              <div class="msg-top"><span class="msg-name">低频</span><span class="msg-time">现在</span></div>
+              <div class="msg-preview">刚刚建立连接</div>
+            </div>
+          </div>
+          <div class="msg-item" onclick="openChat('低频')">
+            <div class="msg-avatar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1.5" fill="#34C759"/><circle cx="15" cy="10" r="1.5" fill="#34C759"/></svg>
+            </div>
+            <div class="msg-body">
+              <div class="msg-top"><span class="msg-name">低频</span><span class="msg-time">现在</span></div>
+              <div class="msg-preview">刚刚建立连接</div>
+            </div>
+          </div>
+          <div class="msg-item" onclick="openChat('夜航鲸')">
+            <div class="msg-avatar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1.5" fill="#34C759"/><circle cx="15" cy="10" r="1.5" fill="#34C759"/></svg>
+            </div>
+            <div class="msg-body">
+              <div class="msg-top"><span class="msg-name">夜航鲸</span><span class="msg-time">18:42</span></div>
+              <div class="msg-preview">那我们晚点 B 区碰个头？</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <section class="chat-view" id="chat-view" aria-hidden="true" aria-label="聊天界面">
+      <header class="chat-header">
+        <button class="chat-back" type="button" onclick="closeChat()" aria-label="返回消息列表">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+        <div class="chat-person">
+          <strong id="chat-contact-name">低频</strong>
+          <span>戒指连接 · 在线</span>
+        </div>
+        <div class="chat-header-mark" aria-hidden="true"></div>
+      </header>
+
+      <div class="chat-thread" id="chat-thread" aria-live="polite"></div>
+
+      <form class="chat-composer" id="chat-form" onsubmit="sendChatMessage(event)">
+        <textarea
+          class="chat-input"
+          id="chat-input"
+          rows="1"
+          maxlength="500"
+          placeholder="输入消息"
+          aria-label="输入消息"
+        ></textarea>
+        <button class="chat-send" type="submit" aria-label="发送消息">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 2L11 13"/>
+            <path d="M22 2L15 22l-4-9-9-4 20-7z"/>
+          </svg>
+        </button>
+      </form>
+    </section>
+
+    <nav class="bottom-nav">
+      <div class="nav-item active" data-page="signal" onclick="goTo('signal')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8.5 8.5a6 6 0 0 1 7 0"/><path d="M5.5 5.5a10 10 0 0 1 13 0"/></svg>
+        <span>信号</span>
+      </div>
+      <div class="nav-item" data-page="nearby" onclick="goTo('nearby')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
+        <span>附近</span>
+      </div>
+      <div class="nav-item" data-page="status" onclick="goTo('status')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M4.93 4.93l2.12 2.12"/><path d="M16.95 16.95l2.12 2.12"/><path d="M2 12h3"/><path d="M19 12h3"/><path d="M4.93 19.07l2.12-2.12"/><path d="M16.95 7.05l2.12-2.12"/></svg>
+        <span>状态</span>
+      </div>
+      <div class="nav-item" data-page="messages" onclick="goTo('messages')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>消息</span>
+      </div>
+    </nav>
+
+    <!-- Add Tag Modal -->
+    <div class="modal-overlay" id="tag-modal" onclick="closeTagModal(event)">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-title">添加标签</div>
+        <input class="modal-input" id="tag-input" type="text" placeholder="输入标签名称" maxlength="10">
+        <div class="modal-btns">
+          <button class="btn-cancel" onclick="closeTagModal()">取消</button>
+          <button class="btn-confirm" onclick="confirmAddTag()">添加</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Wish Modal -->
+    <div class="modal-overlay" id="wish-modal" onclick="closeWishModal(event)">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-title">今天想找</div>
+        <input class="modal-input" id="wish-input" type="text" placeholder="今天想找什么样的人？" maxlength="40">
+        <div class="modal-btns">
+          <button class="btn-cancel" onclick="closeWishModal()">取消</button>
+          <button class="btn-confirm" onclick="confirmWish()">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const titles = {
+      red: ['想遇见心动的人', '只与同样选择红色的人匹配'],
+      green: ['想遇见同好的人', '只与同样选择绿色的人匹配'],
+      blue: ['暂时不想被发现', '可以随时重新开启']
+    };
+
+    const anims = {
+      idle: 'Anims/Idle.mp4',
+      sayHi: 'Anims/SayHi.mp4',
+      angry: 'Anims/Angry.mp4',
+      fromLeft: 'Anims/FromLeft.mp4'
+    };
+
+    const mascotVideo = document.getElementById('mascot-video');
+    let currentAnim = 'idle';
+    let animLocked = false;
+    let endTimeout = null;
+
+    function playMascot(src, loop = false, onEnd) {
+      if (!mascotVideo) return;
+      if (endTimeout) { clearTimeout(endTimeout); endTimeout = null; }
+      mascotVideo.loop = loop;
+      mascotVideo.src = src;
+      mascotVideo.load();
+
+      const tryPlay = () => {
+        const p = mascotVideo.play();
+        if (p && p.catch) p.catch(() => {});
+      };
+
+      if (mascotVideo.readyState >= 3) {
+        tryPlay();
+      } else {
+        mascotVideo.addEventListener('loadeddata', tryPlay, { once: true });
+      }
+
+      const finish = () => {
+        if (endTimeout) { clearTimeout(endTimeout); endTimeout = null; }
+        if (onEnd) onEnd();
+      };
+
+      mascotVideo.addEventListener('ended', finish, { once: true });
+
+      if (!loop && onEnd) {
+        const scheduleEnd = () => {
+          const dur = mascotVideo.duration;
+          if (dur && isFinite(dur)) {
+            const remain = Math.max(0, (dur - mascotVideo.currentTime) * 1000);
+            endTimeout = setTimeout(finish, remain + 100);
+          } else {
+            setTimeout(scheduleEnd, 50);
+          }
+        };
+        scheduleEnd();
+      }
+    }
+
+    function playIdle() {
+      currentAnim = 'idle';
+      playMascot(anims.idle, true);
+    }
+
+    function playSayHiOnce() {
+      if (animLocked) return;
+      animLocked = true;
+      currentAnim = 'sayHi';
+      playMascot(anims.sayHi, false, () => {
+        animLocked = false;
+        playIdle();
+      });
+    }
+
+    function playAngry() {
+      if (animLocked) return;
+      animLocked = true;
+      currentAnim = 'angry';
+      playMascot(anims.angry, false, () => {
+        animLocked = false;
+        playIdle();
+      });
+    }
+
+    function playFromLeft() {
+      if (animLocked || !document.getElementById('page-signal').classList.contains('active')) return;
+      animLocked = true;
+      currentAnim = 'fromLeft';
+      playMascot(anims.fromLeft, false, () => {
+        animLocked = false;
+        playIdle();
+      });
+    }
+
+    function onMascotClick() {
+      playAngry();
+    }
+
+    function selectMode(mode) {
+      document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
+      document.querySelector(`.mode-card[data-mode="${mode}"]`).classList.add('selected');
+      document.getElementById('hero-title').textContent = titles[mode][0];
+      document.getElementById('hero-sub').textContent = titles[mode][1];
+      document.getElementById('page-nearby').dataset.mode = mode;
+      document.getElementById('app-logo').dataset.mode = mode;
+      document.getElementById('logo-mode-word').textContent = {
+        red: 'RED',
+        green: 'GREEN',
+        blue: 'BLUE'
+      }[mode];
+    }
+
+    const pageOrder = ['signal', 'nearby', 'status', 'messages'];
+    let currentPage = 'signal';
+
+    function goTo(page, isSwipe = false) {
+      if (document.getElementById('chat-view')?.classList.contains('open')) closeChat();
+      document.getElementById('app').classList.toggle('status-theme', page === 'status');
+      currentPage = page;
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById('page-' + page).classList.add('active');
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.querySelector(`.nav-item[data-page="${page}"]`).classList.add('active');
+      if (isSwipe && page === 'signal') {
+        playFromLeft();
+      }
+      const statusContainer = document.getElementById('status-container');
+      if (page === 'status') {
+        setTimeout(() => {
+          if (statusContainer && statusContainer._statusResize) statusContainer._statusResize();
+        }, 50);
+        if (statusContainer && statusContainer._startStatusAnimation) statusContainer._startStatusAnimation();
+      } else {
+        if (statusContainer && statusContainer._stopStatusAnimation) statusContainer._stopStatusAnimation();
+      }
+    }
+
+    const conversations = {
+      '低频': [
+        { type: 'system', text: '你们通过「绿色 · 同好」建立了匿名连接' },
+        { type: 'incoming', text: '嗨，刚刚看到我们都对智能硬件感兴趣。', time: '现在' }
+      ],
+      '夜航鲸': [
+        { type: 'system', text: '今天 18:36 建立连接' },
+        { type: 'incoming', text: '你也在附近的产品交流活动吗？', time: '18:38' },
+        { type: 'outgoing', text: '在，我刚到。你在哪个区域？', time: '18:40' },
+        { type: 'incoming', text: '那我们晚点 B 区碰个头？', time: '18:42' }
+      ]
+    };
+    let activeChatContact = '';
+
+    function renderConversation() {
+      const thread = document.getElementById('chat-thread');
+      const messages = conversations[activeChatContact] || [];
+      thread.replaceChildren();
+
+      const day = document.createElement('div');
+      day.className = 'chat-day';
+      day.textContent = '今天';
+      thread.appendChild(day);
+
+      messages.forEach(message => {
+        if (message.type === 'system') {
+          const system = document.createElement('div');
+          system.className = 'chat-system';
+          system.textContent = message.text;
+          thread.appendChild(system);
+          return;
+        }
+
+        const row = document.createElement('div');
+        row.className = `chat-row ${message.type}`;
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble';
+        bubble.textContent = message.text;
+        row.appendChild(bubble);
+
+        if (message.time) {
+          const time = document.createElement('div');
+          time.className = 'chat-bubble-time';
+          time.textContent = message.time;
+          row.appendChild(time);
+        }
+        thread.appendChild(row);
+      });
+
+      requestAnimationFrame(() => {
+        thread.scrollTop = thread.scrollHeight;
+      });
+    }
+
+    function openChat(contactName) {
+      activeChatContact = contactName;
+      if (!conversations[contactName]) conversations[contactName] = [];
+      document.getElementById('chat-contact-name').textContent = contactName;
+      document.getElementById('chat-view').classList.add('open');
+      document.getElementById('chat-view').setAttribute('aria-hidden', 'false');
+      renderConversation();
+      setTimeout(() => document.getElementById('chat-input').focus(), 300);
+    }
+
+    function closeChat() {
+      const chatView = document.getElementById('chat-view');
+      chatView.classList.remove('open');
+      chatView.setAttribute('aria-hidden', 'true');
+      const input = document.getElementById('chat-input');
+      input.value = '';
+      input.style.height = '';
+    }
+
+    function sendChatMessage(event) {
+      event.preventDefault();
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text || !activeChatContact) return;
+
+      const now = new Date();
+      const time = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+      conversations[activeChatContact].push({ type: 'outgoing', text, time });
+      input.value = '';
+      input.style.height = '';
+      renderConversation();
+
+      document.querySelectorAll('.msg-item').forEach(item => {
+        if (item.querySelector('.msg-name')?.textContent !== activeChatContact) return;
+        item.querySelector('.msg-preview').textContent = text;
+        item.querySelector('.msg-time').textContent = time;
+      });
+      input.focus();
+    }
+
+    const chatInput = document.getElementById('chat-input');
+    chatInput.addEventListener('input', () => {
+      chatInput.style.height = 'auto';
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 112) + 'px';
+    });
+    chatInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) sendChatMessage(event);
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && document.getElementById('chat-view').classList.contains('open')) closeChat();
+    });
+
+    let tags = ['AI Agent', '智能硬件', '科幻电影'];
+    function renderTags() {
+      const wrap = document.getElementById('tags-wrap');
+      wrap.innerHTML = tags.map(t => `<span class="tag">${t}${tags.length > 1 ? '<span class="remove" onclick="removeTag(this)">×</span>' : ''}</span>`).join('') +
+        '<button class="add-tag" onclick="openAddTag()">+ 添加</button>';
+      document.getElementById('tag-count').textContent = tags.length;
+    }
+
+    function removeTag(el) {
+      const text = el.parentElement.childNodes[0].textContent;
+      tags = tags.filter(t => t !== text);
+      renderTags();
+    }
+
+    function openAddTag() {
+      const modal = document.getElementById('tag-modal');
+      document.getElementById('tag-input').value = '';
+      modal.classList.add('show');
+      setTimeout(() => document.getElementById('tag-input').focus(), 50);
+    }
+
+    function closeTagModal(e) {
+      if (e && e.target !== e.currentTarget) return;
+      document.getElementById('tag-modal').classList.remove('show');
+    }
+
+    function confirmAddTag() {
+      const input = document.getElementById('tag-input');
+      const val = input.value.trim();
+      if (!val) return;
+      if (!tags.includes(val)) tags.push(val);
+      renderTags();
+      closeTagModal();
+    }
+
+    document.getElementById('tag-input').addEventListener('keydown', e => { if (e.key === 'Enter') confirmAddTag(); });
+
+    let currentWish = '能一起做产品的人';
+    function editWish() {
+      document.getElementById('wish-input').value = currentWish;
+      document.getElementById('wish-modal').classList.add('show');
+      setTimeout(() => document.getElementById('wish-input').focus(), 50);
+    }
+
+    function closeWishModal(e) {
+      if (e && e.target !== e.currentTarget) return;
+      document.getElementById('wish-modal').classList.remove('show');
+    }
+
+    function confirmWish() {
+      const val = document.getElementById('wish-input').value.trim();
+      if (val) {
+        currentWish = val;
+        document.getElementById('wish-text').innerHTML = val + '<span class="muted"> · 长按戒指说一句话可以改</span>';
+      }
+      closeWishModal();
+    }
+
+    document.getElementById('wish-input').addEventListener('keydown', e => { if (e.key === 'Enter') confirmWish(); });
+
+    let discoveryTimer;
+    function startDiscovery() {
+      document.getElementById('nearby-empty').style.display = 'none';
+      document.getElementById('radar-wrap').style.display = 'flex';
+      updateAnonCode();
+      discoveryTimer = setInterval(updateAnonCode, 3000);
+    }
+
+    function stopDiscovery() {
+      clearInterval(discoveryTimer);
+      document.getElementById('radar-wrap').style.display = 'none';
+      document.getElementById('nearby-empty').style.display = 'flex';
+    }
+
+    function updateAnonCode() {
+      const code = '#' + Math.floor(Math.random() * 65535).toString(16).toUpperCase().padStart(4, '0');
+      document.getElementById('anon-code').textContent = code;
+    }
+
+    function toast(msg) {
+      const t = document.createElement('div');
+      t.textContent = msg;
+      t.style.cssText = 'position:absolute;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:30;animation:popIn 0.2s ease;';
+      document.getElementById('app').appendChild(t);
+      setTimeout(() => t.remove(), 1800);
+    }
+
+    // Swipe gesture support
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const pagesEl = document.querySelector('.pages');
+
+    pagesEl.addEventListener('touchstart', e => {
+      touchStartX = e.changedTouches[0].screenX;
+      touchStartY = e.changedTouches[0].screenY;
+    }, { passive: true });
+
+    pagesEl.addEventListener('touchend', e => {
+      const touchEndX = e.changedTouches[0].screenX;
+      const touchEndY = e.changedTouches[0].screenY;
+      const dx = touchEndX - touchStartX;
+      const dy = touchEndY - touchStartY;
+      if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx)) return;
+
+      const idx = pageOrder.indexOf(currentPage);
+      if (dx < 0 && idx < pageOrder.length - 1) {
+        goTo(pageOrder[idx + 1], true);
+      } else if (dx > 0 && idx > 0) {
+        goTo(pageOrder[idx - 1], true);
+      }
+    }, { passive: true });
+
+    // Mouse drag fallback for desktop testing
+    let mouseStartX = 0;
+    let mouseDown = false;
+    pagesEl.addEventListener('mousedown', e => { mouseDown = true; mouseStartX = e.screenX; });
+    pagesEl.addEventListener('mouseup', e => {
+      if (!mouseDown) return;
+      mouseDown = false;
+      const dx = e.screenX - mouseStartX;
+      if (Math.abs(dx) < 50) return;
+      const idx = pageOrder.indexOf(currentPage);
+      if (dx < 0 && idx < pageOrder.length - 1) {
+        goTo(pageOrder[idx + 1], true);
+      } else if (dx > 0 && idx > 0) {
+        goTo(pageOrder[idx - 1], true);
+      }
+    });
+
+    // Status page particle life
+    (function initStatusPage() {
+      const statusContainer = document.getElementById('status-container');
+      const statusPage = document.getElementById('page-status');
+      if (!statusContainer || !statusPage) return;
+
+      const CORE_CONFIG = { maxDeform: 1.2, happyBounce: 6, sadJitter: 6, sadDroop: 0.5 };
+
+      const BOUNDS = {
+        hr: [0.001, 0.006],
+        stress: [1.5, 0.3],
+        oxy: [0, 400],
+        temp: [[10, 80, 255], [255, 60, 20]],
+        jumpspeed: [0, 50],
+        synspeed: [0.1, 0.5],
+        coresat: [0.0, 1.0]
+      };
+
+      const TWO_PI = Math.PI * 2;
+      const lerp = (min, max, t) => min + (max - min) * t;
+      const clamp = (val) => Math.min(255, Math.max(0, Math.round(val)));
+      const saturate = (v) => Math.min(1, Math.max(0, v));
+      const smoothstep = (t) => t * t * (3 - 2 * t);
+      const lerpColor = (c1, c2, t) => [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)];
+      const hexToRgb = (hex) => {
+        const bigint = parseInt(hex.slice(1), 16);
+        return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
+      };
+
+      const canvas = document.getElementById('status-canvas');
+      const ctx = canvas.getContext('2d', { alpha: false });
+      let width, height, cx, cy;
+
+      function resize() {
+        const availableH = Math.max(1, Math.floor(window.innerHeight - 124));
+        width = canvas.width = Math.max(1, Math.floor(window.innerWidth));
+        height = canvas.height = availableH;
+        cx = width / 2;
+        cy = height / 2;
+      }
+      statusContainer._statusResize = resize;
+      resize();
+
+      const ro = new ResizeObserver(() => {
+        resize();
+      });
+      ro.observe(statusContainer);
+
+      const QUALITY_LEVELS = { low: 800, medium: 1500, high: 2500 };
+      const MAX_NUM = QUALITY_LEVELS.high;
+      let activeParticleCount = QUALITY_LEVELS.low;
+
+      const angles = new Float32Array(MAX_NUM);
+      const baseRadii = new Float32Array(MAX_NUM);
+      const sizes = new Float32Array(MAX_NUM);
+      const phases = new Float32Array(MAX_NUM);
+      const depthSeeds = new Float32Array(MAX_NUM);
+      const verticalSeeds = new Float32Array(MAX_NUM);
+
+      for (let i = 0; i < MAX_NUM; i++) {
+        angles[i] = Math.random() * TWO_PI;
+        baseRadii[i] = Math.random() * Math.random() * 220 + 30;
+        sizes[i] = Math.random() * 2.5 + 0.5;
+        phases[i] = Math.random() * TWO_PI;
+        depthSeeds[i] = Math.random() * 2 - 1;
+        verticalSeeds[i] = Math.random() * 2 - 1;
+      }
+
+      const NUM_TENTACLES = 6;
+      const FULL_TURN = TWO_PI;
+      const SECTOR_WIDTH = FULL_TURN / NUM_TENTACLES;
+      const wrapAngle = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+
+      const tentacleConfigs = Array.from({ length: NUM_TENTACLES }, (_, index) => ({
+        regularAngle: index * SECTOR_WIDTH,
+        angleOffset: (Math.random() - 0.5) * SECTOR_WIDTH * 0.58,
+        halfWidth: SECTOR_WIDTH * (0.26 + Math.random() * 0.22),
+        strength: 0.62 + Math.random() * 0.82,
+        speed: 0.72 + Math.random() * 0.62,
+        phase: Math.random() * FULL_TURN,
+        driftPhase: Math.random() * FULL_TURN,
+        driftSpeed: 0.055 + Math.random() * 0.12,
+        driftAmount: SECTOR_WIDTH * (0.08 + Math.random() * 0.18),
+        widthPhase: Math.random() * FULL_TURN,
+        widthSpeed: 0.10 + Math.random() * 0.16,
+        strengthPhase: Math.random() * FULL_TURN,
+        strengthSpeed: 0.08 + Math.random() * 0.15,
+        bendStrength: (0.11 + Math.random() * 0.17) * (Math.random() < 0.5 ? -1 : 1),
+        depthBias: (Math.random() * 2 - 1) * 0.9
+      }));
+
+      const tentacleCenters = new Float32Array(NUM_TENTACLES);
+      const tentacleWidths = new Float32Array(NUM_TENTACLES);
+      const tentaclePulses = new Float32Array(NUM_TENTACLES);
+      const tentacleStrengths = new Float32Array(NUM_TENTACLES);
+      const tentacleBends = new Float32Array(NUM_TENTACLES);
+      const tentacleDepthPushes = new Float32Array(NUM_TENTACLES);
+
+      const DEPTH_LAYERS = 8;
+      const layerCounts = new Uint16Array(DEPTH_LAYERS);
+      const bucketIndices = Array.from({ length: DEPTH_LAYERS }, () => new Uint16Array(MAX_NUM));
+      const screenX = new Float32Array(MAX_NUM);
+      const screenY = new Float32Array(MAX_NUM);
+      const screenSize = new Float32Array(MAX_NUM);
+
+      const $ = id => document.getElementById(id);
+
+      document.querySelectorAll('#page-status .quality-button').forEach(button => {
+        button.addEventListener('click', () => {
+          activeParticleCount = Number(button.dataset.count);
+          document.querySelectorAll('#page-status .quality-button').forEach(item => {
+            item.classList.toggle('active', item === button);
+          });
+          $('val-quality').innerText = `${button.dataset.label} · ${activeParticleCount}`;
+        });
+      });
+
+      const params = {};
+      ['ext', 'joy', 'hr', 'stress', 'oxy', 'temp', 'jumpspeed', 'synspeed', 'tentrandom', 'coresat'].forEach(key => {
+        const el = $(`param-${key}`);
+        params[key] = parseFloat(el.value) / 100;
+        el.addEventListener('input', (e) => {
+          params[key] = parseFloat(e.target.value) / 100;
+          $(`val-${key}`).innerText = e.target.value + '%';
+        });
+      });
+
+      ['hr', 'stress', 'oxy', 'jumpspeed', 'synspeed', 'coresat'].forEach(key => {
+        $(`min-${key}`).addEventListener('input', (e) => BOUNDS[key][0] = parseFloat(e.target.value) || 0);
+        $(`max-${key}`).addEventListener('input', (e) => BOUNDS[key][1] = parseFloat(e.target.value) || 0);
+      });
+
+      $('min-temp').addEventListener('input', (e) => BOUNDS.temp[0] = hexToRgb(e.target.value));
+      $('max-temp').addEventListener('input', (e) => BOUNDS.temp[1] = hexToRgb(e.target.value));
+
+      let time = 0;
+      let jumpPhase = 0;
+      let lastFrameTime = performance.now();
+      let rafId = null;
+      let statusAnimRunning = false;
+
+      function startStatusAnimation() {
+        if (statusAnimRunning) return;
+        statusAnimRunning = true;
+        lastFrameTime = performance.now();
+        rafId = requestAnimationFrame(render);
+      }
+
+      function stopStatusAnimation() {
+        statusAnimRunning = false;
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+      }
+      statusContainer._startStatusAnimation = startStatusAnimation;
+      statusContainer._stopStatusAnimation = stopStatusAnimation;
+
+      function render(frameTime) {
+        if (!statusAnimRunning) return;
+        const isActive = statusPage.classList.contains('active');
+        if (!isActive) {
+          lastFrameTime = frameTime;
+          rafId = requestAnimationFrame(render);
+          return;
+        }
+
+        const dt = Math.min((frameTime - lastFrameTime) / 1000, 0.033);
+        lastFrameTime = frameTime;
+        time += dt;
+
+        const rotationSpeed = lerp(BOUNDS.hr[0], BOUNDS.hr[1], params.hr);
+        const cohesion = lerp(BOUNDS.stress[0], BOUNDS.stress[1], params.stress);
+        const currentSpikeMax = lerp(BOUNDS.oxy[0], BOUNDS.oxy[1], params.oxy);
+        const deformStrength = lerp(0, CORE_CONFIG.maxDeform, params.ext);
+
+        const sadness = 1 - params.joy;
+        const currentJitter = sadness * CORE_CONFIG.sadJitter;
+        const currentDroop = sadness * CORE_CONFIG.sadDroop;
+        const currentBounce = params.joy * CORE_CONFIG.happyBounce;
+
+        const currentJumpSpeed = lerp(BOUNDS.jumpspeed[0], BOUNDS.jumpspeed[1], params.jumpspeed);
+        jumpPhase += currentJumpSpeed * dt;
+
+        const currentSynSpeed = lerp(BOUNDS.synspeed[0], BOUNDS.synspeed[1], params.synspeed);
+
+        const breathPhase = time * (0.95 + currentJumpSpeed * 0.028) + params.joy * 0.7;
+        const breathWave = Math.sin(breathPhase);
+        const breath01 = 0.5 + 0.5 * breathWave;
+        const bodyBreathScale = 1 + breathWave * 0.055;
+        const depthBreathScale = 1 + breathWave * 0.10;
+        const verticalBreathScale = 1 - breathWave * 0.035;
+        const coreBob = Math.sin(time * 0.72 + 0.4) * 5 + breathWave * 4;
+        const highlightPulse = 0.80 + breath01 * 0.20;
+        const microPulse = Math.sin(time * 2.15 + breathPhase * 0.6) * 0.5 + 0.5;
+        const nucleusDriftX = Math.sin(time * 0.83 + 1.2) * 12;
+        const nucleusDriftY = Math.cos(time * 0.71 + 0.7) * 9 + coreBob * 0.10;
+        const membraneFlicker = 0.75 + microPulse * 0.25;
+
+        ctx.fillStyle = 'rgba(3, 3, 5, 0.24)';
+        ctx.fillRect(0, 0, width, height);
+
+        const brightness = 0.5 + params.joy * 0.5;
+        const baseRGB = lerpColor(BOUNDS.temp[0], BOUNDS.temp[1], params.temp);
+
+        const gray = baseRGB[0] * 0.299 + baseRGB[1] * 0.587 + baseRGB[2] * 0.114;
+        const currentCoreSat = lerp(BOUNDS.coresat[0], BOUNDS.coresat[1], params.coresat);
+        const coreFactor = 1.0 - currentCoreSat;
+
+        const centerRGB = [
+          clamp((baseRGB[0] * (1 - coreFactor) + gray * coreFactor) * brightness * 1.5),
+          clamp((baseRGB[1] * (1 - coreFactor) + gray * coreFactor) * brightness * 1.5),
+          clamp((baseRGB[2] * (1 - coreFactor) + gray * coreFactor) * brightness * 1.5)
+        ];
+
+        const edgeRGB = [
+          clamp(baseRGB[0] * brightness),
+          clamp(baseRGB[1] * brightness),
+          clamp(baseRGB[2] * brightness)
+        ];
+
+        const maxVisualRadius = Math.max(150, 220 * cohesion + currentSpikeMax + deformStrength * 50);
+        const liveCoreRadius = maxVisualRadius * (0.98 + breath01 * 0.08);
+
+        const auraGradient = ctx.createRadialGradient(cx, cy + coreBob * 0.18, liveCoreRadius * 0.10, cx, cy + coreBob * 0.18, liveCoreRadius * 1.48);
+        auraGradient.addColorStop(0, `rgba(${centerRGB[0]}, ${centerRGB[1]}, ${centerRGB[2]}, 0.11)`);
+        auraGradient.addColorStop(0.55, `rgba(${edgeRGB[0]}, ${edgeRGB[1]}, ${edgeRGB[2]}, 0.06)`);
+        auraGradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = auraGradient;
+        ctx.beginPath();
+        ctx.arc(cx, cy + coreBob * 0.12, liveCoreRadius * 1.28, 0, TWO_PI);
+        ctx.fill();
+
+        const gradient = ctx.createRadialGradient(cx - liveCoreRadius * 0.10, cy - liveCoreRadius * 0.16 + coreBob * 0.2, 0, cx, cy + coreBob * 0.10, liveCoreRadius * 1.14);
+        gradient.addColorStop(0, `rgba(${centerRGB[0]}, ${centerRGB[1]}, ${centerRGB[2]}, 0.97)`);
+        gradient.addColorStop(0.42, `rgba(${clamp((centerRGB[0] + edgeRGB[0]) / 2)}, ${clamp((centerRGB[1] + edgeRGB[1]) / 2)}, ${clamp((centerRGB[2] + edgeRGB[2]) / 2)}, 0.90)`);
+        gradient.addColorStop(1, `rgba(${edgeRGB[0]}, ${edgeRGB[1]}, ${edgeRGB[2]}, 0.74)`);
+
+        const shadowGradient = ctx.createRadialGradient(cx, cy + liveCoreRadius * 0.68, liveCoreRadius * 0.08, cx, cy + liveCoreRadius * 0.68, liveCoreRadius * 0.88);
+        shadowGradient.addColorStop(0, 'rgba(0,0,0,0.24)');
+        shadowGradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = shadowGradient;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + liveCoreRadius * 0.68, liveCoreRadius * (0.66 + breath01 * 0.03), liveCoreRadius * (0.18 + breath01 * 0.015), 0, 0, TWO_PI);
+        ctx.fill();
+
+        const randomness = params.tentrandom;
+        const pulseRate = currentSynSpeed * FULL_TURN;
+        const globalTwist = Math.sin(time * 0.28) * 0.24;
+        const regularHalfWidth = SECTOR_WIDTH * 0.43;
+
+        for (let t = 0; t < NUM_TENTACLES; t++) {
+          const config = tentacleConfigs[t];
+          const speed = lerp(1, config.speed, randomness);
+          const phase = lerp(t * 1.37, config.phase, randomness);
+          const localTime = time * pulseRate * speed;
+
+          const primaryWave = Math.sin(localTime + phase);
+          const secondaryWave = Math.sin(localTime * 0.47 + phase * 1.73 + 0.6);
+          let rawPulse = 0.5 + primaryWave * 0.38 + secondaryWave * 0.12 * randomness;
+          rawPulse = saturate(rawPulse);
+          tentaclePulses[t] = smoothstep(rawPulse);
+
+          const slowDrift =
+            Math.sin(time * config.driftSpeed + config.driftPhase) * config.driftAmount +
+            Math.sin(time * config.driftSpeed * 0.37 + config.driftPhase * 1.91) * config.driftAmount * 0.34;
+          tentacleCenters[t] = config.regularAngle + globalTwist + (config.angleOffset + slowDrift) * randomness;
+
+          const widthBreath = 0.90 + Math.sin(time * config.widthSpeed + config.widthPhase) * 0.16 * randomness;
+          tentacleWidths[t] = lerp(regularHalfWidth, config.halfWidth * widthBreath, randomness);
+
+          const strengthDrift = 0.82 + (0.5 + 0.5 * Math.sin(time * config.strengthSpeed + config.strengthPhase)) * 0.36;
+          tentacleStrengths[t] = lerp(1, config.strength * strengthDrift, randomness);
+
+          const regularBend = Math.sin(localTime * 0.62 + phase + 0.8) * 0.18;
+          const organicBend = Math.sin(localTime * 0.55 + phase + 0.8) * config.bendStrength;
+          tentacleBends[t] = lerp(regularBend, organicBend, randomness);
+
+          tentacleDepthPushes[t] = lerp(0.15, config.depthBias, randomness) * (0.45 + tentaclePulses[t] * 0.55);
+        }
+
+        layerCounts.fill(0);
+
+        const bodyTurnY = time * (0.24 + rotationSpeed * 16) + params.ext * 0.4 + breathWave * 0.08;
+        const bodyTiltX = Math.sin(time * 0.31 + params.ext * 1.1) * 0.16 - sadness * 0.08 + breathWave * 0.035;
+        const cosY = Math.cos(bodyTurnY);
+        const sinY = Math.sin(bodyTurnY);
+        const cosX = Math.cos(bodyTiltX);
+        const sinX = Math.sin(bodyTiltX);
+        const bodyDepth = 118;
+        const tentacleDepth = 72;
+        const focalLength = 400;
+        const cameraOffset = 250;
+        const depthRange = bodyDepth + tentacleDepth + 120;
+
+        for (let i = 0; i < activeParticleCount; i++) {
+          angles[i] += rotationSpeed * (150 / Math.max(baseRadii[i], 10));
+
+          const shapeMorph = 1 + deformStrength * (0.4 * Math.sin(angles[i] * 3) + 0.3 * Math.cos(angles[i] * 5));
+
+          const jitterWave = time * 2.4 + phases[i] * 1.17;
+          const jitterX = Math.sin(jitterWave) * currentJitter * 0.45;
+          const jitterY = Math.cos(jitterWave * 1.31) * currentJitter * 0.45;
+          const droop = baseRadii[i] * currentDroop * (1 + Math.sin(angles[i]));
+
+          const bounce = Math.sin(jumpPhase * 1.5 + phases[i]) * currentBounce;
+          let currentRadius = baseRadii[i] * shapeMorph * cohesion;
+
+          const rNorm = Math.min(1.2, baseRadii[i] / 220);
+          const spiralAngle = angles[i] - rNorm * 1.28;
+          const rootFade = saturate((rNorm - 0.10) / 0.90);
+          const lengthProfile = Math.pow(rootFade, 1.65);
+
+          let radialExtension = 0;
+          let angularBend = 0;
+          let depthInfluence = 0;
+
+          for (let t = 0; t < NUM_TENTACLES; t++) {
+            const angleDelta = wrapAngle(spiralAngle - tentacleCenters[t]);
+            let regionWeight = 1 - Math.abs(angleDelta) / tentacleWidths[t];
+            if (regionWeight <= 0) continue;
+
+            regionWeight = smoothstep(regionWeight);
+
+            const lengthVariation = 1 + Math.sin(rNorm * 7.2 + t * 1.83 + time * 0.22) * 0.10 * randomness;
+
+            radialExtension += regionWeight * tentaclePulses[t] * tentacleStrengths[t] * currentSpikeMax * lengthProfile * lengthVariation;
+            angularBend += regionWeight * tentacleBends[t] * lengthProfile;
+            depthInfluence += regionWeight * tentacleDepthPushes[t] * lengthProfile;
+          }
+
+          currentRadius += Math.min(radialExtension, currentSpikeMax * 1.48);
+          currentRadius += Math.sin(jumpPhase + phases[i]) * 4 + bounce;
+          currentRadius *= 1 + breathWave * (0.04 + rNorm * 0.02);
+          const renderAngle = angles[i] + angularBend;
+
+          let x3 = Math.cos(renderAngle) * currentRadius * bodyBreathScale;
+          let y3 = Math.sin(renderAngle) * currentRadius * verticalBreathScale + droop + coreBob + verticalSeeds[i] * 7 * (1 - rNorm * 0.45);
+          let z3 = (depthSeeds[i] * bodyDepth * (1 - rNorm * 0.28) + depthInfluence * tentacleDepth) * depthBreathScale + Math.sin(breathPhase + phases[i]) * 6 * (0.3 + rNorm * 0.7);
+
+          const rotX = x3 * cosY - z3 * sinY;
+          const rotZ1 = x3 * sinY + z3 * cosY;
+          const rotY = y3 * cosX - rotZ1 * sinX;
+          const rotZ = y3 * sinX + rotZ1 * cosX;
+
+          const perspective = focalLength / (focalLength + rotZ + cameraOffset);
+          const x = cx + (rotX + jitterX) * perspective;
+          const y = cy + (rotY + jitterY) * perspective;
+          const depth01 = saturate((rotZ + depthRange) / (depthRange * 2));
+          const sizeScale = 0.72 + perspective * 0.96 + depth01 * 0.32;
+          const particleSize = sizes[i] * sizeScale;
+
+          const bucket = Math.min(DEPTH_LAYERS - 1, Math.max(0, (depth01 * DEPTH_LAYERS) | 0));
+          const pos = layerCounts[bucket]++;
+          bucketIndices[bucket][pos] = i;
+          screenX[i] = x;
+          screenY[i] = y;
+          screenSize[i] = particleSize;
+        }
+
+        ctx.fillStyle = gradient;
+        ctx.globalCompositeOperation = 'lighter';
+
+        for (let layer = 0; layer < DEPTH_LAYERS; layer++) {
+          const count = layerCounts[layer];
+          if (!count) continue;
+
+          ctx.globalAlpha = 0.16 + (layer / (DEPTH_LAYERS - 1)) * 0.84;
+          ctx.beginPath();
+          const indices = bucketIndices[layer];
+          for (let n = 0; n < count; n++) {
+            const idx = indices[n];
+            const radius = screenSize[idx];
+            const x = screenX[idx];
+            const y = screenY[idx];
+            ctx.moveTo(x + radius, y);
+            ctx.arc(x, y, radius, 0, TWO_PI);
+          }
+          ctx.fill();
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+
+        const highlightGradient = ctx.createRadialGradient(
+          cx - liveCoreRadius * 0.34,
+          cy - liveCoreRadius * 0.36 + coreBob * 0.18,
+          liveCoreRadius * 0.04,
+          cx - liveCoreRadius * 0.20,
+          cy - liveCoreRadius * 0.24 + coreBob * 0.16,
+          liveCoreRadius * 0.70
+        );
+        highlightGradient.addColorStop(0, `rgba(255,255,255,${(0.16 + breath01 * 0.10).toFixed(3)})`);
+        highlightGradient.addColorStop(0.45, `rgba(255,255,255,${(0.06 + breath01 * 0.04).toFixed(3)})`);
+        highlightGradient.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = highlightGradient;
+        ctx.beginPath();
+        ctx.arc(cx, cy + coreBob * 0.10, liveCoreRadius * 0.98, 0, TWO_PI);
+        ctx.fill();
+
+        const innerGlow = ctx.createRadialGradient(
+          cx - liveCoreRadius * 0.08,
+          cy - liveCoreRadius * 0.08 + coreBob * 0.12,
+          liveCoreRadius * 0.02,
+          cx,
+          cy + coreBob * 0.10,
+          liveCoreRadius * 0.64
+        );
+        innerGlow.addColorStop(0, `rgba(${centerRGB[0]}, ${centerRGB[1]}, ${centerRGB[2]}, ${(0.16 * highlightPulse).toFixed(3)})`);
+        innerGlow.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = innerGlow;
+        ctx.beginPath();
+        ctx.arc(cx, cy + coreBob * 0.10, liveCoreRadius * 0.82, 0, TWO_PI);
+        ctx.fill();
+
+        const frontShade = ctx.createRadialGradient(
+          cx + liveCoreRadius * 0.34,
+          cy + liveCoreRadius * 0.30 + coreBob * 0.12,
+          liveCoreRadius * 0.10,
+          cx + liveCoreRadius * 0.18,
+          cy + liveCoreRadius * 0.24 + coreBob * 0.12,
+          liveCoreRadius * 0.95
+        );
+        frontShade.addColorStop(0, 'rgba(0,0,0,0)');
+        frontShade.addColorStop(1, 'rgba(0,0,0,0.16)');
+        ctx.fillStyle = frontShade;
+        ctx.beginPath();
+        ctx.arc(cx, cy + coreBob * 0.10, liveCoreRadius * 0.98, 0, TWO_PI);
+        ctx.fill();
+
+        const nucleusGradient = ctx.createRadialGradient(
+          cx - liveCoreRadius * 0.06 + nucleusDriftX,
+          cy - liveCoreRadius * 0.03 + nucleusDriftY,
+          liveCoreRadius * 0.04,
+          cx - liveCoreRadius * 0.01 + nucleusDriftX * 0.65,
+          cy + nucleusDriftY * 0.75,
+          liveCoreRadius * 0.30
+        );
+        nucleusGradient.addColorStop(0, `rgba(${centerRGB[0]}, ${centerRGB[1]}, ${centerRGB[2]}, ${(0.18 + breath01 * 0.08).toFixed(3)})`);
+        nucleusGradient.addColorStop(0.55, `rgba(255,255,255,${(0.08 + microPulse * 0.05).toFixed(3)})`);
+        nucleusGradient.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = nucleusGradient;
+        ctx.beginPath();
+        ctx.arc(cx + nucleusDriftX * 0.45, cy + nucleusDriftY * 0.45, liveCoreRadius * 0.30, 0, TWO_PI);
+        ctx.fill();
+
+        const fluidBlobA = ctx.createRadialGradient(
+          cx - liveCoreRadius * 0.16,
+          cy + liveCoreRadius * 0.06 + coreBob * 0.08,
+          liveCoreRadius * 0.02,
+          cx - liveCoreRadius * 0.10,
+          cy + liveCoreRadius * 0.10 + coreBob * 0.08,
+          liveCoreRadius * 0.32
+        );
+        fluidBlobA.addColorStop(0, `rgba(${centerRGB[0]}, ${centerRGB[1]}, ${centerRGB[2]}, ${(0.08 * membraneFlicker).toFixed(3)})`);
+        fluidBlobA.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = fluidBlobA;
+        ctx.beginPath();
+        ctx.ellipse(cx - liveCoreRadius * 0.08, cy + liveCoreRadius * 0.12 + coreBob * 0.06, liveCoreRadius * 0.26, liveCoreRadius * 0.18, -0.35, 0, TWO_PI);
+        ctx.fill();
+
+        const fluidBlobB = ctx.createRadialGradient(
+          cx + liveCoreRadius * 0.18,
+          cy - liveCoreRadius * 0.04 + coreBob * 0.10,
+          liveCoreRadius * 0.01,
+          cx + liveCoreRadius * 0.14,
+          cy + coreBob * 0.08,
+          liveCoreRadius * 0.28
+        );
+        fluidBlobB.addColorStop(0, `rgba(255,255,255,${(0.055 + breath01 * 0.025).toFixed(3)})`);
+        fluidBlobB.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = fluidBlobB;
+        ctx.beginPath();
+        ctx.ellipse(cx + liveCoreRadius * 0.12, cy + coreBob * 0.10, liveCoreRadius * 0.20, liveCoreRadius * 0.13, 0.48, 0, TWO_PI);
+        ctx.fill();
+
+        const rimLight = ctx.createRadialGradient(
+          cx - liveCoreRadius * 0.24,
+          cy - liveCoreRadius * 0.30 + coreBob * 0.14,
+          liveCoreRadius * 0.62,
+          cx,
+          cy + coreBob * 0.10,
+          liveCoreRadius * 1.08
+        );
+        rimLight.addColorStop(0, 'rgba(255,255,255,0)');
+        rimLight.addColorStop(0.72, `rgba(255,255,255,${(0.022 + breath01 * 0.018).toFixed(3)})`);
+        rimLight.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.strokeStyle = rimLight;
+        ctx.lineWidth = Math.max(1.2, liveCoreRadius * 0.010);
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + coreBob * 0.10, liveCoreRadius * 0.92, liveCoreRadius * 0.90, -0.12, 0, TWO_PI);
+        ctx.stroke();
+
+        const lowerMembraneShade = ctx.createRadialGradient(
+          cx,
+          cy + liveCoreRadius * 0.28 + coreBob * 0.12,
+          liveCoreRadius * 0.24,
+          cx,
+          cy + liveCoreRadius * 0.28 + coreBob * 0.12,
+          liveCoreRadius * 0.98
+        );
+        lowerMembraneShade.addColorStop(0, 'rgba(0,0,0,0)');
+        lowerMembraneShade.addColorStop(1, 'rgba(0,0,0,0.12)');
+        ctx.fillStyle = lowerMembraneShade;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + liveCoreRadius * 0.24 + coreBob * 0.10, liveCoreRadius * 0.70, liveCoreRadius * 0.32, 0, 0, TWO_PI);
+        ctx.fill();
+
+        rafId = requestAnimationFrame(render);
+      }
+
+      if (statusPage.classList.contains('active')) startStatusAnimation();
+    })();
+
+    // Initialize
+    playSayHiOnce();
+  </script>
+  <!-- 后端接线层：订阅实时匹配、确认与设备状态；后端不可达时保持离线演示。 -->
+  <script src="logic/backend.js"></script>
+</body>
+</html>

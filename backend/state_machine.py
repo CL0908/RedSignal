@@ -40,10 +40,8 @@ def go_blue(user_id: str) -> SessionState:
     store.set_state(user_id, S.CANCELLED)
     pair = store.active_pair_for(user_id)
     if pair is not None:
-        pair.cancelled = True
-    profile = store.get_profile(user_id)
-    if profile:
-        profile.mode = Mode.OFF
+        store.cancel_pair(pair, "went_blue")
+    store.update_mode(user_id, Mode.OFF)
     store.set_state(user_id, S.BLUE_OFFLINE)
     return S.BLUE_OFFLINE
 
@@ -52,9 +50,7 @@ def set_mode(user_id: str, mode: Mode) -> SessionState:
     """模式切换入口：红/绿 -> DISCOVERABLE；蓝 -> go_blue。"""
     if mode == Mode.OFF:
         return go_blue(user_id)
-    profile = store.get_profile(user_id)
-    if profile:
-        profile.mode = mode
+    store.update_mode(user_id, mode)
     current = store.get_state(user_id)
     if current in (S.BLUE_OFFLINE, S.CANCELLED, S.CONTENT_READY, S.CONNECTED):
         store.set_state(user_id, S.DISCOVERABLE)

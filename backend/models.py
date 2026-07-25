@@ -108,6 +108,16 @@ class Encounter:
 
 
 @dataclass
+class ChatMessage:
+    """一条聊天消息。只存在于已建立的 Encounter 内——没有双向确认就没有会话。"""
+    message_id: str
+    encounter_id: str
+    sender_id: str
+    text: str
+    created_at: datetime = field(default_factory=now)
+
+
+@dataclass
 class IMUBatch:
     """0x0605 批量帧。只留内存，不入库。"""
     user_id: str
