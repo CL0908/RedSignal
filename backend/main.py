@@ -334,7 +334,23 @@ async def ws_user(ws: WebSocket, user_id: str, token: str = "") -> None:
 
 # ---------------- 设备 WebSocket（真实戒指帧入口） ----------------
 @app.websocket("/ws/device/{user_id}")
-async def ws_device(ws: WebSocket, user_id: str) -> None:
+async def ws_device(ws: WebSocket, user_id: str, token: str = "") -> None:
+    """与 /ws/user 同样的身份校验——这条通道比 UI 通道更敏感。
+
+    戒指的「按钮双击」帧（0x0703）收到后直接调 do_button_confirm，
+    不校验身份的话，任何人连到别人的 device 通道发一帧，就能替对方完成确认，
+    绕过「双方各自双击」这条产品红线。
+    """
+    try:
+        real_id = auth_mod.auth.resolve(token, user_id)
+    except auth_mod.AuthError as e:
+        log.warning("ws_device 鉴权失败: %s", e)
+        await ws.close(code=4401)
+        return
+    if real_id != user_id:
+        log.warning("ws_device 身份不符: URL 声称 %s，token 是 %s", user_id, real_id)
+        await ws.close(code=4403)
+        return
     await ws.accept()
     hub.device_ws[user_id] = ws
     wearable_hub.ring_connected(user_id)
@@ -514,7 +530,7 @@ def sync_gadgetbridge(user_id: str, req: GadgetbridgeSyncRequest,
 
 # ---------------- 手表 WebSocket（Android 实时转发） ----------------
 @app.websocket("/ws/watch/{user_id}")
-async def ws_watch(ws: WebSocket, user_id: str) -> None:
+async def ws_watch(ws: WebSocket, user_id: str, token: str = "") -> None:
     """Android 客户端通过此通道实时转发 Gadgetbridge 广播数据。
 
     消息格式:
@@ -525,6 +541,16 @@ async def ws_watch(ws: WebSocket, user_id: str) -> None:
       {"type": "battery", "percent": 85}
       {"type": "sleep", "hours": 7.2}
     """
+    # 生理数据只做个人展示、不进匹配，但也不该让别人往你账号里灌假数据
+    try:
+        real_id = auth_mod.auth.resolve(token, user_id)
+    except auth_mod.AuthError as e:
+        log.warning("ws_watch 鉴权失败: %s", e)
+        await ws.close(code=4401)
+        return
+    if real_id != user_id:
+        await ws.close(code=4403)
+        return
     await ws.accept()
     wearable_hub.get(user_id).watch.connected = True
     log.info("watch ws connected: %s", user_id)

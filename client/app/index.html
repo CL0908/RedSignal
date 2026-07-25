@@ -2694,5 +2694,7 @@
   </script>
   <!-- 后端接线层：订阅实时匹配、确认与设备状态；后端不可达时保持离线演示。 -->
   <script src="logic/backend.js"></script>
+  <!-- 戒指 Web Bluetooth 直连。必须在 backend.js 之后：要读 window.RS 的身份与 token。 -->
+  <script src="logic/ring.js"></script>
 </body>
 </html>

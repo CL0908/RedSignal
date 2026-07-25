@@ -16,8 +16,13 @@
   /* 后端地址。同机部署时就是当前源；前端上 Vercel、后端上 Railway 时是两个域，
      用 <meta name="rs-api-base" content="https://xxx.up.railway.app"> 指过去。
      跨域时后端必须配 REDSIGNAL_ALLOWED_ORIGINS，否则 REST 全被 CORS 拦。 */
-  const HTTP = (document.querySelector('meta[name="rs-api-base"]')?.content || '').trim()
-               || location.origin;
+  // 本机跑的时候一律同源：meta 里填的是线上 Railway 域名，本地页面照着打会被
+  // CORS 拦掉，而 WebSocket 不走 CORS 仍显示「已连接」，排查起来很误导。
+  const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname)
+                  || /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(location.hostname);
+  const HTTP = isLocal ? location.origin
+    : ((document.querySelector('meta[name="rs-api-base"]')?.content || '').trim()
+       || location.origin);
   const WS = HTTP.replace(/^http/, 'ws');
   const SESSION_KEY = 'redsignal.session';
 
@@ -72,11 +77,13 @@
     ephemerals: [],
     scanTimer: null,
     applying: false,   // true = 正在把后端状态回灌 UI，此时不要再往回发 set_mode
+    token: '',         // ring.js 连 /ws/device 时要带
     // 会话按昵称索引（index.html 的 conversations 就是这么存的），
     // 但后端路由用 encounter_id——前端始终不需要知道对方 user_id。
     encounterByName: {},
     analyzed: {},      // encounter_id -> true，避免同一段聊天反复送去学偏好
   };
+  RS.token = TOKEN;
   window.RS = RS;
 
   // ---------------------------------------------------------------- 工具
@@ -358,10 +365,20 @@
     }
   }
 
+  let seededDemo = false;
+
   async function refreshDevices() {
     try {
       const d = await api(`/api/devices/${USER}`);
-      applyWatch(d.watch || {});
+      const w = d.watch || {};
+      // 没接真手表时注入一组演示生理数据，否则「今天」卡和状态页都是空的。
+      // 只注一次，真手表一旦上报就不再覆盖。
+      if (!seededDemo && !w.connected && !(w.today_steps > 0)) {
+        seededDemo = true;
+        await api(`/api/demo/${USER}/mock`, { method: 'POST' }).catch(() => null);
+        return refreshDevices();
+      }
+      applyWatch(w);
       if (d.ring && d.ring.connected) {
         setRingStatus(`戒指已连接 · ${d.ring.battery_percent}%`, true);
       }
@@ -537,6 +554,16 @@
         rssi: -58 - Math.floor(Math.random() * 8),
       }));
   }
+
+  // 状态页在 iframe 里，拿不到主页面的会话——把后端地址与身份用查询串传进去，
+  // 它据此拉 /api/devices 驱动粒子生命体；拉不到就自己随机，不会停在默认值上。
+  (function wireStatusFrame() {
+    const f = document.getElementById('status-page-frame');
+    if (!f) return;
+    const p = new URLSearchParams({ api: HTTP, user: USER });
+    if (TOKEN) p.set('token', TOKEN);
+    f.src = 'status_v11_mobile.html?' + p.toString();
+  })();
 
   // 顶栏连接状态点一下 = 退出登录（真实用户才给，演示用户没什么可退的）
   if (session) {

@@ -105,8 +105,12 @@
 
   <script>
     const SESSION_KEY = 'redsignal.session';
-    const API = (document.querySelector('meta[name="rs-api-base"]')?.content || '').trim()
-                || location.origin;
+    // 与 backend.js 同一条规则：本机一律同源，meta 只对线上生效
+    const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname)
+                    || /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(location.hostname);
+    const API = isLocal ? location.origin
+      : ((document.querySelector('meta[name="rs-api-base"]')?.content || '').trim()
+         || location.origin);
     let mode = 'signin';
     let cfg = null;
 

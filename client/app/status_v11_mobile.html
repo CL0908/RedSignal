@@ -7,6 +7,15 @@
     <style>
         body, html { margin: 0; padding: 0; overflow: hidden; background-color: #030305; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         canvas { display: block; }
+
+        /* 参数面板与「参数」按钮：调试用，演示时不露出。
+           留在 DOM 里而不是删掉——上面的状态源要往滑条里写值，
+           删了就没有承载状态的地方了。 */
+        #mobile-toggle, #mobile-sheet-header, #mobile-tabs,
+        #mobile-backdrop, #mobile-controls, .panel {
+            display: none !important;
+        }
+
         
         .panel {
             position: absolute; background: rgba(15, 15, 18, 0.7); padding: 20px;
@@ -470,7 +479,9 @@
         }
 
         cx = availableWidth / 2;
-        cy = availableHeight / 2;
+        // 上移 9%：原先重心居中，但底部有 App 的导航栏压着，视觉上偏低。
+        // 挪渲染中心而不是 transform 画布——后者会裁掉顶部、底部留空缝。
+        cy = availableHeight / 2 - availableHeight * 0.09;
 
         if (isMobileLayout()) {
             const limitingSize = Math.min(availableWidth, availableHeight);
@@ -478,7 +489,7 @@
         } else {
             sceneScale = 1;
             cx = width / 2;
-            cy = height / 2;
+            cy = height / 2 - height * 0.09;
         }
     }
     window.addEventListener('resize', resize, { passive: true });
@@ -771,6 +782,66 @@
             animationFrameId = requestAnimationFrame(render);
         }
     });
+
+    /* ---------------------------------------------------------------
+       生命体状态来源。优先真实手表数据，拿不到就随机——
+       演示时不能出现"一动不动的默认值"，那看起来像坏了。
+
+       设计红线：生理数据只做个人展示，绝不进入匹配（README 附录A）。
+       这里只喂给粒子渲染，不回传任何东西。
+       --------------------------------------------------------------- */
+    (function stateSource() {
+        const P = id => document.getElementById(id);
+        const set = (id, v) => {
+            const el = P(id);
+            if (!el) return;
+            el.value = Math.max(0, Math.min(100, Math.round(v)));
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+
+        // 父窗口（index.html）把后端地址和用户传进来；独立打开时退化为纯随机
+        const q = new URLSearchParams(location.search);
+        const API = (q.get('api') || '').trim();
+        const USER = (q.get('user') || '').trim();
+        const TOKEN = (q.get('token') || '').trim();
+
+        function randomize() {
+            set('param-ext', rnd(25, 75));
+            set('param-joy', rnd(45, 95));
+            set('param-hr', rnd(10, 70));
+            set('param-stress', rnd(20, 80));
+            set('param-oxy', rnd(15, 60));
+            set('param-temp', rnd(0, 55));
+        }
+
+        // 手表量纲 → 0-100 滑条位置
+        const pct = (v, lo, hi) => ((v - lo) / (hi - lo)) * 100;
+
+        async function fromWatch() {
+            if (!API || !USER) return false;
+            try {
+                const h = TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {};
+                const r = await fetch(`${API}/api/devices/${USER}`, { headers: h });
+                if (!r.ok) return false;
+                const w = (await r.json()).watch || {};
+                let used = false;
+                if (w.heart_rate_bpm > 0) { set('param-hr', pct(w.heart_rate_bpm, 50, 140)); used = true; }
+                if (w.stress_level >= 0) { set('param-stress', w.stress_level); used = true; }
+                if (w.spo2_percent > 0) { set('param-oxy', pct(w.spo2_percent, 90, 100)); used = true; }
+                if (w.sleep_hours > 0) { set('param-joy', pct(w.sleep_hours, 4, 9)); used = true; }
+                return used;
+            } catch { return false; }
+        }
+
+        async function tick() {
+            if (!(await fromWatch())) randomize();
+        }
+
+        randomize();          // 先给一组，别让页面停在默认值上
+        tick();
+        setInterval(tick, 6000);
+    })();
 </script>
 </body>
 </html>
