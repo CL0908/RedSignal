@@ -182,6 +182,29 @@ class Persistence:
         if r.status_code >= 300:
             log.warning("persist patch %s -> %s %s", table, r.status_code, r.text[:200])
 
+    def read(self, table: str, filters: str = "", limit: int = 500) -> list[dict]:
+        """同步读一次（只在冷路径用：进程重启后恢复聊天记录）。
+
+        写入是异步队列，因为 sighting 是每秒数十次的热路径；
+        读不一样——一次会话只读一次，直接同步请求最简单，
+        也避免了"读到一半队列还没落库"的时序问题。
+        """
+        if not self.enabled:
+            return []
+        try:
+            r = httpx.get(f"{self.url}/rest/v1/{table}?{filters}&limit={limit}",
+                          timeout=_TIMEOUT,
+                          headers={"apikey": self.key,
+                                   "Authorization": f"Bearer {self.key}"})
+            if r.status_code >= 300:
+                log.warning("read %s -> %s %s", table, r.status_code, r.text[:150])
+                return []
+            data = r.json()
+            return data if isinstance(data, list) else []
+        except Exception as e:                                # noqa: BLE001
+            log.warning("read %s failed: %r", table, e)
+            return []
+
     async def flush(self) -> None:
         """关服前把剩余队列写完（FastAPI shutdown 调用）。"""
         if not self.enabled:

@@ -24,8 +24,8 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (agent, auth as auth_mod, chat, confirm, gadgetbridge, matching,
-               mock_data, presence, tags, transcription, zilo_protocol)
+from . import (agent, auth as auth_mod, bot, chat, confirm, gadgetbridge,
+               matching, mock_data, presence, tags, transcription, zilo_protocol)
 from .ring_audio import RingAudioSession
 from .models import (
     ButtonEventType, IMUBatch, Mode, RingButtonEvent, SessionState,
@@ -642,6 +642,21 @@ def list_ephemerals():
     return [{"ephemeral_id": e, "user_id": u} for e, u in store.ephemeral_map.items()]
 
 
+class BotAsk(BaseModel):
+    message: str
+
+
+@app.post("/api/bot/{user_id}")
+def bot_ask(user_id: str, req: BotAsk, _: str = CallerIsUser):
+    """小黑：App 内置产品助手。只答产品用法，不碰技术细节与敏感话题。"""
+    return {"text": bot.reply(req.message), "from": "小黑"}
+
+
+@app.get("/api/bot/greeting")
+def bot_greeting():
+    return {"text": bot.GREETING, "from": "小黑"}
+
+
 @app.get("/api/nearby/{user_id}")
 def nearby(user_id: str, limit: int = 3, _: str = CallerIsUser):
     """按适配分给出前 N 个推荐。
@@ -816,9 +831,10 @@ def chat_history(user_id: str, encounter_id: str, _: str = CallerIsUser):
         chat.chat_store.partner_of(encounter_id, user_id)   # 参与者校验
     except chat.ChatError:
         return {"error": "forbidden", "messages": []}
+    # restore 而不是 history：进程重启后内存是空的，但消息还在库里
     return {"encounter_id": encounter_id,
             "messages": [chat.chat_store.as_payload(m, user_id)
-                         for m in chat.chat_store.history(encounter_id)]}
+                         for m in chat.chat_store.restore(encounter_id)]}
 
 
 class ChatAnalyzeRequest(BaseModel):

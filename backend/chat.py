@@ -9,12 +9,16 @@
 """
 from __future__ import annotations
 
+import logging
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from .models import ChatMessage, now
 from .persistence import persistence
 from .store import store
+
+log = logging.getLogger("redsignal.chat")
 
 MAX_TEXT_LEN = 500          # 与前端 textarea maxlength 对齐
 MAX_THREAD_LEN = 500        # 单场活动够用，防止内存无上限增长
@@ -69,6 +73,35 @@ class ChatStore:
 
     def history(self, encounter_id: str) -> list[ChatMessage]:
         return list(self.threads.get(encounter_id, []))
+
+    def restore(self, encounter_id: str) -> list[ChatMessage]:
+        """内存里没有就去 Supabase 捞回来。
+
+        进程重启会清空内存（实测遇到过 Railway 的 1012 service restart），
+        但消息其实一直在 chat_messages 表里。不回落的话，用户会看到
+        "聊天记录凭空消失"——数据没丢，只是读不到，比真丢了更让人困惑。
+        """
+        if self.threads.get(encounter_id):
+            return self.history(encounter_id)
+        rows = persistence.read("chat_messages",
+                                f"encounter_id=eq.{encounter_id}&order=created_at.asc")
+        if not rows:
+            return []
+        restored = []
+        for r in rows:
+            try:
+                restored.append(ChatMessage(
+                    message_id=r["message_id"], encounter_id=r["encounter_id"],
+                    sender_id=r["sender_id"], text=r["text"],
+                    created_at=datetime.fromisoformat(
+                        r["created_at"].replace("Z", "+00:00")),
+                ))
+            except Exception:      # noqa: BLE001 —— 单行坏数据不该拖垮整段历史
+                continue
+        if restored:
+            self.threads[encounter_id] = restored
+            log.info("从 Supabase 恢复会话 %s：%d 条", encounter_id, len(restored))
+        return restored
 
     def as_payload(self, msg: ChatMessage, viewer_id: str) -> dict:
         """给前端的一条消息。mine 由后端判定，前端不需要知道对方 user_id。"""

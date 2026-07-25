@@ -1733,31 +1733,13 @@
       <!-- Messages Page -->
       <section class="page" id="page-messages">
         <div class="msg-list">
-          <div class="msg-item" onclick="openChat('低频')">
+          <div class="msg-item" onclick="openChat('小黑')">
             <div class="msg-avatar">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1.5" fill="#34C759"/><circle cx="15" cy="10" r="1.5" fill="#34C759"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="#2C2620" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" fill="#2C2620"/><circle cx="9" cy="10" r="1.6" fill="#F7F1E8"/><circle cx="15" cy="10" r="1.6" fill="#F7F1E8"/></svg>
             </div>
             <div class="msg-body">
-              <div class="msg-top"><span class="msg-name">低频</span><span class="msg-time">现在</span></div>
-              <div class="msg-preview">刚刚建立连接</div>
-            </div>
-          </div>
-          <div class="msg-item" onclick="openChat('低频')">
-            <div class="msg-avatar">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1.5" fill="#34C759"/><circle cx="15" cy="10" r="1.5" fill="#34C759"/></svg>
-            </div>
-            <div class="msg-body">
-              <div class="msg-top"><span class="msg-name">低频</span><span class="msg-time">现在</span></div>
-              <div class="msg-preview">刚刚建立连接</div>
-            </div>
-          </div>
-          <div class="msg-item" onclick="openChat('夜航鲸')">
-            <div class="msg-avatar">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="9" cy="10" r="1.5" fill="#34C759"/><circle cx="15" cy="10" r="1.5" fill="#34C759"/></svg>
-            </div>
-            <div class="msg-body">
-              <div class="msg-top"><span class="msg-name">夜航鲸</span><span class="msg-time">18:42</span></div>
-              <div class="msg-preview">那我们晚点 B 区碰个头？</div>
+              <div class="msg-top"><span class="msg-name">小黑</span><span class="msg-time">随时在</span></div>
+              <div class="msg-preview">有什么可以帮到你？</div>
             </div>
           </div>
         </div>
@@ -1979,15 +1961,8 @@
     }
 
     const conversations = {
-      '低频': [
-        { type: 'system', text: '你们通过「绿色 · 同好」建立了匿名连接' },
-        { type: 'incoming', text: '嗨，刚刚看到我们都对智能硬件感兴趣。', time: '现在' }
-      ],
-      '夜航鲸': [
-        { type: 'system', text: '今天 18:36 建立连接' },
-        { type: 'incoming', text: '你也在附近的产品交流活动吗？', time: '18:38' },
-        { type: 'outgoing', text: '在，我刚到。你在哪个区域？', time: '18:40' },
-        { type: 'incoming', text: '那我们晚点 B 区碰个头？', time: '18:42' }
+      '小黑': [
+        { type: 'incoming', text: 'hi！我是小黑。有什么可以帮到你？', time: '现在' }
       ]
     };
     let activeChatContact = '';

@@ -694,6 +694,8 @@
   // ------------------------------------------------------------ 聊天收发
   /* sendChatMessage 不能用 wrap()：原函数会先清空输入框，
      等到 after 钩子跑的时候文本已经没了。所以整体替换，先取文本再放行。 */
+  const BOT_NAME = '小黑';
+
   const origSendChat = window.sendChatMessage;
   if (typeof origSendChat === 'function') {
     window.sendChatMessage = function (event) {
@@ -701,10 +703,43 @@
       const text = input ? input.value.trim() : '';
       const name = activeChat();
       const r = origSendChat.apply(this, arguments);   // 本地乐观渲染
+
+      if (name === BOT_NAME) {
+        if (text) askBot(text);
+        return r;
+      }
       const eid = RS.encounterByName[name];
       if (text && eid) send({ action: 'chat_send', encounter_id: eid, text });
       return r;
     };
+  }
+
+  /** 问小黑。回答走后端（有 Claude 就用，没有则走后端的关键词兜底）。 */
+  async function askBot(question) {
+    const convs = getConversations();
+    let reply;
+    try {
+      const r = await api(`/api/bot/${USER}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: question }),
+      });
+      reply = r && r.text;
+    } catch {
+      reply = '我这会儿有点忙，稍后再问我一次？';
+    }
+    if (!reply) return;
+    if (convs) {
+      (convs[BOT_NAME] = convs[BOT_NAME] || []).push({
+        type: 'incoming', text: reply, time: nowHHMM(),
+      });
+    }
+    if (isChatOpenWith(BOT_NAME) && typeof window.renderConversation === 'function') {
+      window.renderConversation();
+    }
+    const item = [...document.querySelectorAll('.msg-item')]
+      .find(el => el.querySelector('.msg-name')?.textContent === BOT_NAME);
+    if (item) item.querySelector('.msg-preview').textContent = reply;
   }
 
   // 打开会话时拉一次历史，覆盖本地乐观副本（刷新/重连后对齐）
