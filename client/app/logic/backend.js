@@ -45,6 +45,14 @@
   const USER = session ? session.user_id : (demoUser || '');
   const TOKEN = session ? session.access_token : '';
 
+  /* 两套体验，同一份代码：
+       judge  —— 评委版（loginpre.html 进入）。感应 → 1~2 秒 → 确认成功 →
+                 跳状态页。台上那 30 秒不允许开天窗，所以不赌真实匹配。
+       public —— 外部用户（扫码进入）。走真实标签匹配，不演任何东西；
+                 手机没有 Web Bluetooth，戒指相关的入口一律不出现。 */
+  const MODE = localStorage.getItem('redsignal.mode') === 'judge' ? 'judge' : 'public';
+  const IS_JUDGE = MODE === 'judge';
+
   if (!USER) {
     location.replace('login.html');
     return;
@@ -494,16 +502,14 @@
   }
 
   async function senseNearby() {
-    // 桌面 Chrome：真列一次附近设备。用户选任意一个都算"感应到"。
-    if (!navigator.bluetooth) return 'timer';
+    // 优先连"已经授权过的那枚戒指"——免弹窗，评委不用点任何东西。
+    // 需要 chrome://flags/#enable-web-bluetooth-new-permissions-backend，
+    // 且戒指处于唤醒状态（睡着时它完全不广播，这是实测过的）。
     try {
-      const d = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,          // 现场什么戒指都行，不挑我们那两枚
-      });
-      return d && d.name ? d.name : 'device';
-    } catch {
-      return 'timer';                    // 用户取消或不支持，照常往下走
-    }
+      const name = await window.Ring?.autoConnect?.(6000);
+      if (name) return name;
+    } catch { /* 没开 flag / 没授权过 / 戒指睡着，都走下面 */ }
+    return 'timer';        // 连不上也照常往下走：台上不能卡住
   }
 
   async function runFlow() {
@@ -525,9 +531,20 @@
     const mode = document.querySelector('.mode-card.selected')?.dataset.mode || 'red';
     if (mode === 'blue') window.selectMode('red');
     else send({ action: 'set_mode', mode: MODE_TO_API[mode] });
-    startScan();                    // 真实链路照常上报，不影响
-    RS.flowRunning = true;
-    runFlow().finally(() => { RS.flowRunning = false; });
+    startScan();
+    if (IS_JUDGE) {
+      // 评委版：必成流程
+      RS.flowRunning = true;
+      runFlow().finally(() => { RS.flowRunning = false; });
+    } else {
+      // 外部用户：等真实匹配。没标签就匹配不出来，先提示清楚。
+      const tags = getTags();
+      if (!tags || !tags.length) {
+        setRadar('还差一步', '先回「信号」页加几个标签，才能算出适合你的人');
+      } else {
+        setRadar('正在匿名发现', '正在为你寻找适配的人…');
+      }
+    }
   });
 
   wrap('stopDiscovery', () => {
@@ -650,6 +667,19 @@
         ephemeral_id: e.ephemeral_id,
         rssi: -58 - Math.floor(Math.random() * 8),
       }));
+  }
+
+  /* 外部用户版：手机上没有 Web Bluetooth，戒指连不了；手环也没接。
+     把这两张卡藏掉，好过摆在那里点了没反应。 */
+  if (!IS_JUDGE) {
+    const hide = () => {
+      document.getElementById('ring-connect-card')?.style.setProperty('display', 'none');
+      document.querySelector('.card-health')?.style.setProperty('display', 'none');
+      const rs = document.querySelector('.ring-status');
+      if (rs) rs.style.display = 'none';
+    };
+    hide();
+    setTimeout(hide, 600);   // ring.js 是在这之后挂卡片的，补一次
   }
 
   // 状态页在 iframe 里，拿不到主页面的会话——把后端地址与身份用查询串传进去，

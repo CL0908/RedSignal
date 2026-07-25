@@ -135,6 +135,58 @@
     onDisconnected();
   }
 
+  /* ---- 记住的戒指：免弹窗自动连 ----
+     授权过一次后，getDevices() 能列出本站已获授权的设备，无需再弹选择器。
+     需要 chrome://flags/#enable-web-bluetooth-new-permissions-backend。
+     没开 flag 时 getDevices 不存在，返回 null，调用方自行降级。 */
+  Ring.knownDevices = async function () {
+    if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return null;
+    try {
+      return await navigator.bluetooth.getDevices();
+    } catch {
+      return null;
+    }
+  };
+
+  /** 尝试连已授权的戒指。成功返回设备名，失败返回 null（不弹任何窗）。 */
+  Ring.autoConnect = async function (timeoutMs = 6000) {
+    if (Ring.connected) return Ring.device?.name || 'ring';
+    const devs = await Ring.knownDevices();
+    if (!devs || !devs.length) return null;
+    // 戒指睡着时不广播，gatt.connect 会一直等 —— 必须自己设上限，
+    // 否则整条体验流会卡在这里。
+    for (const d of devs) {
+      try {
+        Ring.device = d;
+        d.addEventListener('gattserverdisconnected', onDisconnected);
+        const server = await Promise.race([
+          d.gatt.connect(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs)),
+        ]);
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        Ring.writeChar = await service.getCharacteristic(WRITE_CHAR);
+        const notifyChar = await service.getCharacteristic(NOTIFY_CHAR);
+        await notifyChar.startNotifications();
+        notifyChar.addEventListener('characteristicvaluechanged', (ev) => {
+          const hex = bytesToHex(ev.target.value.buffer);
+          Ring.lastFrame = hex;
+          Ring.lastFrameAt = Date.now();
+          if (Ring.ws && Ring.ws.readyState === WebSocket.OPEN) {
+            Ring.ws.send(JSON.stringify({ frame: hex }));
+          }
+        });
+        Ring.ws = openDeviceChannel();
+        Ring.connected = true;
+        status(`已连接 ${d.name || 'ring'}`, 'ok');
+        renderButton();
+        return d.name || 'ring';
+      } catch {
+        try { d.gatt?.disconnect(); } catch { /* 没连上 */ }
+      }
+    }
+    return null;
+  };
+
   Ring.connect = connect;
   Ring.disconnect = disconnect;
 

@@ -94,17 +94,13 @@
 
     <div class="msg" id="msg"></div>
 
-    <div class="demo" id="demo" hidden>
-      <div class="demo-title">演示模式（预置用户，无需注册）</div>
-      <div class="demo-btns">
-        <a href="./?user=u_demo_a">信号狐 u_demo_a</a>
-        <a href="./?user=u_demo_b">夜航鲸 u_demo_b</a>
-      </div>
-    </div>
   </div>
 
   <script>
     const SESSION_KEY = 'redsignal.session';
+    // 同一台设备先开过评委版时会留下 judge 标记，这里清掉，
+    // 否则外部用户会拿到「必成流程」而不是真实匹配。
+    localStorage.removeItem('redsignal.mode');
     // 与 backend.js 同一条规则：本机一律同源，meta 只对线上生效
     const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname)
                     || /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(location.hostname);
@@ -148,10 +144,9 @@
         say('连不上后端，请确认服务已启动。', 'err');
         return;
       }
-      $('demo').hidden = !cfg.demo_mode;
       if (!cfg.configured) {
         say('后端还没配 Supabase（缺 SUPABASE_URL 或 SUPABASE_ANON_KEY），' +
-            '注册登录暂不可用。可先用下方演示用户。', 'err');
+            '注册登录暂不可用。', 'err');
         $('submit').disabled = true;
       }
     })();

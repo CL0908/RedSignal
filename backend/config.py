@@ -1,7 +1,13 @@
 """RedSignal 可配置参数。全部阈值集中在此，比赛现场按需调整。"""
 
+import os
+
 # ---- 匹配 ----
-MATCH_SCORE_THRESHOLD = 80        # 适配分及格线（0-100），仅做准入，不决定推送顺序
+# 及格线可用环境变量现场下调（REDSIGNAL_MATCH_THRESHOLD）。
+# 实测：填了常见标签的新用户对预置人群大多能到 80-100 分，
+# 但标签冷门（如「烘焙/插花」最高只有 52）就会一个人也匹配不到。
+# 现场若出现"谁都匹配不上"，把它降到 60-65 是最快的兜底。
+MATCH_SCORE_THRESHOLD = int(os.environ.get("REDSIGNAL_MATCH_THRESHOLD", "80"))
 CANDIDATE_TTL_SECONDS = 300       # 候选 Pair 有效期
 
 # ---- 冷却（两层，缺一不可）----
