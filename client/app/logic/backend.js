@@ -490,7 +490,8 @@
      真实匹配链路（sighting → 持续性判断 → 双向确认）代码原样保留，
      照常在后台跑；这里只是保证台上那 30 秒不会开天窗。 */
   const FLOW = {
-    senseMs: 2000,        // 感应到确认之间的停顿
+    senseMs: 2000,        // 没连上戒指时，感应到确认之间的停顿
+    buttonWaitMs: 6000,   // 连上戒指后等真实按键的上限，超时照样放行
     toStatusMs: 1800,     // 确认成功到跳状态页之间的停顿
   };
 
@@ -515,13 +516,29 @@
   async function runFlow() {
     setRadar('正在匿名发现', '正在感应附近的戒指…');
     const via = await senseNearby();
-    setRadar('感应到附近的戒指',
-             via === 'timer' ? '正在建立匿名连接…' : `已感应到 ${via}`);
-    await new Promise(r => setTimeout(r, FLOW.senseMs));
 
-    setRadar('匹配确认成功', '按下戒指即代表你愿意认识对方');
+    if (via === 'timer') {
+      // 没连上戒指（没开 flag / 没授权 / 戒指睡着 / 手机端）：走计时
+      setRadar('感应到附近的戒指', '正在建立匿名连接…');
+      await new Promise(r => setTimeout(r, FLOW.senseMs));
+    } else {
+      // 连上了：等一次真实按键。按了立刻确认，没按满 6 秒也放行——
+      // 台上绝不能因为"评委没按对"而卡住。
+      setRadar('已感应到戒指', '按一下戒指，确认你愿意认识对方');
+      const pressed = await window.Ring.waitForButton(FLOW.buttonWaitMs);
+      RS.confirmedByRing = pressed;
+      if (pressed) {
+        setRadar('已收到你的确认', '正在建立连接…');
+        await new Promise(r => setTimeout(r, 700));
+      }
+    }
+
+    setRadar('匹配确认成功',
+             RS.confirmedByRing ? '由你按下的戒指确认' : '双方都愿意认识对方');
     if (typeof window.playSayHiOnce === 'function') window.playSayHiOnce();
-    if (typeof window.toast === 'function') window.toast('匹配确认成功');
+    if (typeof window.toast === 'function') {
+      window.toast(RS.confirmedByRing ? '戒指确认成功' : '匹配确认成功');
+    }
 
     await new Promise(r => setTimeout(r, FLOW.toStatusMs));
     if (typeof window.goTo === 'function') window.goTo('status');

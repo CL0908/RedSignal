@@ -27,12 +27,44 @@
     connected: false,
     battery: null,
     lastFrame: null,
+    lastFrameAt: 0,
+    lastButtonAt: 0,
+    _buttonWaiters: [],
   };
   window.Ring = Ring;
 
   function bytesToHex(buf) {
     return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
   }
+
+  /* 帧头：magic(1) + version(2) + cmd(2) + len(4) + crc(2)，全大端。
+     cmd 在 offset 3-4。0x0703 = 按钮双击，是唯一代表"人按了"的信号——
+     连上后戒指会持续吐 0x0605 六轴帧，用"收到任何数据"当判据会瞬间误触发。 */
+  const CMD_BUTTON = 0x0703;
+
+  function frameCmd(bytes) {
+    if (!bytes || bytes.length < 5 || bytes[0] !== 0x3f) return null;
+    return (bytes[3] << 8) | bytes[4];
+  }
+
+  /** 记录一帧到达；是按钮帧就打时间戳并唤醒等待者。 */
+  function noteFrame(bytes) {
+    Ring.lastFrameAt = Date.now();
+    if (frameCmd(bytes) === CMD_BUTTON) {
+      Ring.lastButtonAt = Date.now();
+      Ring._buttonWaiters.splice(0).forEach(fn => fn());
+    }
+  }
+
+  /** 等一次真实按键。ms 内按了返回 true，超时返回 false。 */
+  Ring.waitForButton = function (ms) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve(v); } };
+      Ring._buttonWaiters.push(() => finish(true));
+      setTimeout(() => finish(false), ms);
+    });
+  };
   function hexToBytes(hex) {
     const out = new Uint8Array(hex.length / 2);
     for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
@@ -101,8 +133,10 @@
 
       await notifyChar.startNotifications();
       notifyChar.addEventListener('characteristicvaluechanged', (ev) => {
+        const raw = new Uint8Array(ev.target.value.buffer);
         const hex = bytesToHex(ev.target.value.buffer);
         Ring.lastFrame = hex;
+        noteFrame(raw);
         if (Ring.ws && Ring.ws.readyState === WebSocket.OPEN) {
           Ring.ws.send(JSON.stringify({ frame: hex }));
         }
@@ -168,9 +202,10 @@
         const notifyChar = await service.getCharacteristic(NOTIFY_CHAR);
         await notifyChar.startNotifications();
         notifyChar.addEventListener('characteristicvaluechanged', (ev) => {
+          const raw = new Uint8Array(ev.target.value.buffer);
           const hex = bytesToHex(ev.target.value.buffer);
           Ring.lastFrame = hex;
-          Ring.lastFrameAt = Date.now();
+          noteFrame(raw);
           if (Ring.ws && Ring.ws.readyState === WebSocket.OPEN) {
             Ring.ws.send(JSON.stringify({ frame: hex }));
           }
